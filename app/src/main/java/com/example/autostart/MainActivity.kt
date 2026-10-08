@@ -4,6 +4,7 @@ import android.app.AppOpsManager
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.graphics.Color
 import android.graphics.drawable.Drawable
 import android.os.Build
 import android.os.Bundle
@@ -20,6 +21,11 @@ class MainActivity : AppCompatActivity() {
     private val REQUEST_NOTIF = 1001
     private var showingSetup = false
     private var lastPermissionState = ""
+
+    private val colorGreen = Color.parseColor("#4CAF50")
+    private val colorGray = Color.parseColor("#E0E0E0")
+    private val colorGreenText = Color.WHITE
+    private val colorGrayText = Color.parseColor("#222222")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -38,8 +44,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Если вернулись в приложение и экран настройки открыт —
-        // проверяем, изменились ли разрешения. Если да — перерисовываем.
         if (showingSetup) {
             val current = permissionStateKey()
             if (current != lastPermissionState) {
@@ -90,23 +94,29 @@ class MainActivity : AppCompatActivity() {
         return NotificationManagerCompat.from(this).areNotificationsEnabled()
     }
 
-    private fun overlayLabel(): String {
-        val granted = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && Settings.canDrawOverlays(this)
-        return if (granted) "[OK] Наложение поверх окон" else "[--] Наложение поверх окон"
+    private fun overlayGranted(): Boolean {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && Settings.canDrawOverlays(this)
     }
 
-    private fun usageStatsLabel(): String {
-        return if (hasUsageStatsPermission()) "[OK] Статистика использования" else "[--] Статистика использования"
-    }
-
-    private fun batteryLabel(): String {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return "[OK] Игнор батареи"
+    private fun batteryGranted(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true
         val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
-        return if (pm.isIgnoringBatteryOptimizations(packageName)) "[OK] Игнор батареи" else "[--] Игнор батареи"
+        return pm.isIgnoringBatteryOptimizations(packageName)
     }
 
-    private fun notificationsLabel(): String {
-        return if (areNotificationsEnabled()) "[OK] Уведомления" else "[--] Уведомления"
+    /** Универсальная кнопка разрешения: зелёная с ✓ если выдано, серая с ○ если нет. */
+    private fun permissionButton(title: String, granted: Boolean, onClick: () -> Unit): Button {
+        return Button(this).apply {
+            text = if (granted) "✓  $title" else "○  $title"
+            textSize = 15f
+            setTextColor(if (granted) colorGreenText else colorGrayText)
+            setBackgroundColor(if (granted) colorGreen else colorGray)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 6, 0, 6) }
+            setOnClickListener { onClick() }
+        }
     }
 
     private fun showSetupScreen() {
@@ -123,84 +133,87 @@ class MainActivity : AppCompatActivity() {
         })
 
         root.addView(TextView(this).apply {
-            text = "\nДля работы нужно 4 разрешения.\nНажми на каждое — откроется системная настройка.\nПотом нажми «Обновить статус».\n"
+            text = "\nДля работы нужно 4 разрешения.\nНажми на каждое — откроется системная настройка.\nКогда галочка станет зелёной — жми «ПРОДОЛЖИТЬ».\n"
             textSize = 15f
             gravity = Gravity.CENTER
             setPadding(0, 20, 0, 20)
         })
 
-        root.addView(Button(this).apply {
-            text = overlayLabel()
-            setOnClickListener {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this@MainActivity)) {
-                    startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName")))
-                } else {
-                    Toast.makeText(this@MainActivity, "Уже выдано", Toast.LENGTH_SHORT).show()
-                }
-            }
-        })
-
-        root.addView(Button(this).apply {
-            text = usageStatsLabel()
-            setOnClickListener {
-                if (!hasUsageStatsPermission()) {
-                    startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
-                    Toast.makeText(this@MainActivity, "Найди AutoStart Pro и включи доступ", Toast.LENGTH_LONG).show()
-                } else {
-                    Toast.makeText(this@MainActivity, "Уже выдано", Toast.LENGTH_SHORT).show()
-                }
-            }
-        })
-
-        root.addView(Button(this).apply {
-            text = batteryLabel()
-            setOnClickListener {
+        // 1. Наложение поверх окон
+        root.addView(permissionButton("Наложение поверх окон", overlayGranted()) {
+            if (!overlayGranted()) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
-                    if (!pm.isIgnoringBatteryOptimizations(packageName)) {
-                        try {
-                            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
-                            intent.data = android.net.Uri.parse("package:$packageName")
-                            startActivity(intent)
-                        } catch (e: Exception) {
-                            startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
-                        }
-                    } else {
-                        Toast.makeText(this@MainActivity, "Уже выдано", Toast.LENGTH_SHORT).show()
-                    }
+                    startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName")))
                 }
+            } else {
+                Toast.makeText(this, "Уже выдано", Toast.LENGTH_SHORT).show()
             }
         })
 
-        root.addView(Button(this).apply {
-            text = notificationsLabel()
-            setOnClickListener {
-                if (!areNotificationsEnabled()) {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), REQUEST_NOTIF)
-                    } else {
-                        val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                        intent.putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+        // 2. Статистика использования
+        root.addView(permissionButton("Статистика использования", hasUsageStatsPermission()) {
+            if (!hasUsageStatsPermission()) {
+                startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                Toast.makeText(this, "Найди AutoStart Pro и включи доступ", Toast.LENGTH_LONG).show()
+            } else {
+                Toast.makeText(this, "Уже выдано", Toast.LENGTH_SHORT).show()
+            }
+        })
+
+        // 3. Игнор батареи
+        root.addView(permissionButton("Игнор батареи", batteryGranted()) {
+            if (!batteryGranted()) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    try {
+                        val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                        intent.data = android.net.Uri.parse("package:$packageName")
                         startActivity(intent)
+                    } catch (e: Exception) {
+                        startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
                     }
-                } else {
-                    Toast.makeText(this@MainActivity, "Уже выдано", Toast.LENGTH_SHORT).show()
                 }
+            } else {
+                Toast.makeText(this, "Уже выдано", Toast.LENGTH_SHORT).show()
             }
         })
 
+        // 4. Уведомления
+        root.addView(permissionButton("Уведомления", areNotificationsEnabled()) {
+            if (!areNotificationsEnabled()) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), REQUEST_NOTIF)
+                } else {
+                    val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    intent.putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                    startActivity(intent)
+                }
+            } else {
+                Toast.makeText(this, "Уже выдано", Toast.LENGTH_SHORT).show()
+            }
+        })
+
+        // Кнопка обновить статус
         root.addView(Button(this).apply {
             text = "ОБНОВИТЬ СТАТУС"
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 20, 0, 6) }
             setOnClickListener { recreate() }
         })
 
+        // Кнопка продолжить
         root.addView(Button(this).apply {
             text = "ПРОДОЛЖИТЬ"
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 6, 0, 6) }
             setOnClickListener {
                 if (areAllPermissionsGranted()) {
                     prefs.edit().putBoolean("setup_done", true).apply()
                 } else {
-                    Toast.makeText(this@MainActivity, "Не все разрешения выданы", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "Не все разрешения выданы", Toast.LENGTH_SHORT).show()
                 }
                 recreate()
             }
@@ -230,6 +243,10 @@ class MainActivity : AppCompatActivity() {
 
         root.addView(Button(this).apply {
             text = "Запустить сервис сейчас"
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 10, 0, 6) }
             setOnClickListener {
                 val intent = Intent(this@MainActivity, KeepAliveService::class.java)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent)
@@ -240,6 +257,10 @@ class MainActivity : AppCompatActivity() {
 
         root.addView(Button(this).apply {
             text = "Отключить автозапуск"
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 6, 0, 6) }
             setOnClickListener {
                 prefs.edit().remove("target_packages").apply()
                 Toast.makeText(this@MainActivity, "Отключено", Toast.LENGTH_SHORT).show()
@@ -283,7 +304,7 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(20, 20, 20, 20)
-            setBackgroundColor(if (isSelected) 0xFF4CAF50.toInt() else 0xFFEEEEEE.toInt())
+            setBackgroundColor(if (isSelected) colorGreen else colorGray)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -296,9 +317,10 @@ class MainActivity : AppCompatActivity() {
         })
 
         row.addView(TextView(this).apply {
-            text = if (isSelected) "[OK] $label" else label
+            // Значок галочки перед названием, если выбрано
+            text = if (isSelected) "✓  $label" else "○  $label"
             textSize = 16f
-            setTextColor(0xFF222222.toInt())
+            setTextColor(if (isSelected) colorGreenText else colorGrayText)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
 
@@ -310,6 +332,7 @@ class MainActivity : AppCompatActivity() {
             width = 120
             hint = "15"
             setPadding(10, 10, 10, 10)
+            setTextColor(colorGrayText)
         }
         row.addView(delayInput)
 
