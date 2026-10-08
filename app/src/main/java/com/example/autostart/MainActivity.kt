@@ -29,7 +29,6 @@ class MainActivity : AppCompatActivity() {
     private val colorGray = Color.parseColor("#E0E0E0")
     private val colorGreenText = Color.WHITE
     private val colorGrayText = Color.parseColor("#222222")
-    private val colorBoxBorder = Color.parseColor("#BDBDBD")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -62,7 +61,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun areAllPermissionsGranted(): Boolean {
-        val overlay = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) Settings.canDrawOverlays(this) else true
+        val overlay = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
+            Settings.canDrawOverlays(this) else true
         val battery = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
             pm.isIgnoringBatteryOptimizations(packageName)
@@ -75,7 +75,11 @@ class MainActivity : AppCompatActivity() {
     private fun hasUsageStatsPermission(): Boolean {
         try {
             val appOps = getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
-            val mode = appOps.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), packageName)
+            val mode = appOps.checkOpNoThrow(
+                AppOpsManager.OPSTR_GET_USAGE_STATS,
+                Process.myUid(),
+                packageName
+            )
             return mode == AppOpsManager.MODE_ALLOWED
         } catch (e: Exception) {
             return false
@@ -86,8 +90,9 @@ class MainActivity : AppCompatActivity() {
         return NotificationManagerCompat.from(this).areNotificationsEnabled()
     }
 
-    private fun overlayGranted(): Boolean =
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && Settings.canDrawOverlays(this)
+    private fun overlayGranted(): Boolean {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && Settings.canDrawOverlays(this)
+    }
 
     private fun batteryGranted(): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true
@@ -99,7 +104,9 @@ class MainActivity : AppCompatActivity() {
         val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
         intent.putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        try { startActivity(intent) } catch (e: Exception) {
+        try {
+            startActivity(intent)
+        } catch (e: Exception) {
             try {
                 val fallback = Intent("android.settings.APP_NOTIFICATION_SETTINGS")
                 fallback.putExtra("app_package", packageName)
@@ -150,14 +157,18 @@ class MainActivity : AppCompatActivity() {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                     startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName")))
                 }
-            } else Toast.makeText(this@MainActivity, "Уже выдано", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this@MainActivity, "Уже выдано", Toast.LENGTH_SHORT).show()
+            }
         })
 
         root.addView(permissionButton("Статистика использования", hasUsageStatsPermission()) {
             if (!hasUsageStatsPermission()) {
                 startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
                 Toast.makeText(this@MainActivity, "Найди AutoStart Pro и включи доступ", Toast.LENGTH_LONG).show()
-            } else Toast.makeText(this@MainActivity, "Уже выдано", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this@MainActivity, "Уже выдано", Toast.LENGTH_SHORT).show()
+            }
         })
 
         root.addView(permissionButton("Игнор батареи", batteryGranted()) {
@@ -171,14 +182,18 @@ class MainActivity : AppCompatActivity() {
                         startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
                     }
                 }
-            } else Toast.makeText(this@MainActivity, "Уже выдано", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this@MainActivity, "Уже выдано", Toast.LENGTH_SHORT).show()
+            }
         })
 
         root.addView(permissionButton("Уведомления", areNotificationsEnabled()) {
             if (!areNotificationsEnabled()) {
                 openNotificationSettings()
                 Toast.makeText(this@MainActivity, "Включи уведомления для AutoStart Pro", Toast.LENGTH_LONG).show()
-            } else Toast.makeText(this@MainActivity, "Уже выдано", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this@MainActivity, "Уже выдано", Toast.LENGTH_SHORT).show()
+            }
         })
 
         root.addView(Button(this).apply {
@@ -197,8 +212,11 @@ class MainActivity : AppCompatActivity() {
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { setMargins(0, 6, 0, 6) }
             setOnClickListener {
-                if (areAllPermissionsGranted()) prefs.edit().putBoolean("setup_done", true).apply()
-                else Toast.makeText(this@MainActivity, "Не все разрешения выданы", Toast.LENGTH_SHORT).show()
+                if (areAllPermissionsGranted()) {
+                    prefs.edit().putBoolean("setup_done", true).apply()
+                } else {
+                    Toast.makeText(this@MainActivity, "Не все разрешения выданы", Toast.LENGTH_SHORT).show()
+                }
                 recreate()
             }
         })
@@ -258,11 +276,12 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, 10, 0, 10)
         })
 
-        // Галочка включения монитора
+        val monitorOn = prefs.getBoolean("monitor_enabled", false)
+
         val monitorEnabledCheck = CheckBox(this).apply {
             text = "Включить монитор"
             textSize = 16f
-            isChecked = prefs.getBoolean("monitor_enabled", false)
+            isChecked = monitorOn
             setOnCheckedChangeListener { _, checked ->
                 prefs.edit().putBoolean("monitor_enabled", checked).apply()
                 recreate()
@@ -270,9 +289,7 @@ class MainActivity : AppCompatActivity() {
         }
         root.addView(monitorEnabledCheck)
 
-        val monitorOn = prefs.getBoolean("monitor_enabled", false)
-
-        // Карточка-кнопка выбора пакета монитора
+        // Карточка выбора пакета монитора
         val packageCard = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -286,11 +303,12 @@ class MainActivity : AppCompatActivity() {
 
         val savedMonitorPkg = prefs.getString("monitor_package", "") ?: ""
         if (savedMonitorPkg.isNotEmpty()) {
-            // Проверяем, установлен ли пакет
             val exists = try {
                 packageManager.getApplicationInfo(savedMonitorPkg, 0)
                 true
-            } catch (e: Exception) { false }
+            } catch (e: Exception) {
+                false
+            }
 
             if (exists) {
                 val appInfo = packageManager.getApplicationInfo(savedMonitorPkg, 0)
@@ -339,7 +357,7 @@ class MainActivity : AppCompatActivity() {
         }
         root.addView(packageCard)
 
-        // Поля интервал/неактивность
+        // Интервал проверки
         root.addView(TextView(this).apply {
             text = "Интервал проверки (сек), 5–300:"
             textSize = 13f
@@ -363,6 +381,7 @@ class MainActivity : AppCompatActivity() {
         }
         root.addView(intervalInput)
 
+        // Порог неактивности
         root.addView(TextView(this).apply {
             text = "Неактивность порог (мин), 1–240:"
             textSize = 13f
@@ -379,4 +398,191 @@ class MainActivity : AppCompatActivity() {
                 override fun afterTextChanged(s: Editable?) {
                     val v = s?.toString()?.toLongOrNull() ?: return
                     if (v in 1L..240L) prefs.edit().putLong("monitor_idle_minutes", v).apply()
-               
+                }
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            })
+        }
+        root.addView(idleInput)
+
+        root.addView(TextView(this).apply {
+            text = "Монитор вернёт лаунчер, если он не был активен N минут."
+            textSize = 11f
+            setPadding(0, 0, 0, 20)
+        })
+
+        // ============ КНОПКИ ============
+
+        root.addView(Button(this).apply {
+            text = "Запустить сервис сейчас"
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 10, 0, 6) }
+            setOnClickListener {
+                val intent = Intent(this@MainActivity, KeepAliveService::class.java)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    startForegroundService(intent)
+                } else {
+                    startService(intent)
+                }
+                Toast.makeText(this@MainActivity, "Сервис запущен", Toast.LENGTH_SHORT).show()
+            }
+        })
+
+        root.addView(Button(this).apply {
+            text = "Отключить автозапуск"
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 6, 0, 6) }
+            setOnClickListener {
+                prefs.edit().remove("target_packages").apply()
+                Toast.makeText(this@MainActivity, "Отключено", Toast.LENGTH_SHORT).show()
+                recreate()
+            }
+        })
+
+        root.addView(TextView(this).apply {
+            text = "ВЫБЕРИТЕ ПРИЛОЖЕНИЯ"
+            textSize = 16f
+            setPadding(0, 30, 0, 10)
+        })
+
+        root.addView(TextView(this).apply {
+            text = "Тап по строке — выбор. Фон — свернуть после запуска."
+            textSize = 12f
+            setPadding(0, 0, 0, 10)
+        })
+
+        val pm = packageManager
+        val apps = pm.getInstalledApplications(android.content.pm.PackageManager.GET_META_DATA)
+        val savedPackages = prefs.getStringSet("target_packages", emptySet()) ?: emptySet()
+
+        val launchableApps = apps.filter { app ->
+            app.packageName != packageName &&
+            pm.getLaunchIntentForPackage(app.packageName) != null
+        }
+
+        val sortedApps = launchableApps.sortedWith(
+            compareByDescending<android.content.pm.ApplicationInfo> {
+                savedPackages.contains(it.packageName)
+            }.thenBy {
+                pm.getApplicationLabel(it).toString().lowercase()
+            }
+        )
+
+        for (app in sortedApps) {
+            val label = pm.getApplicationLabel(app).toString()
+            val icon = pm.getApplicationIcon(app)
+            val isSelected = savedPackages.contains(app.packageName)
+            root.addView(createAppRow(label, icon, isSelected, app.packageName))
+        }
+
+        setContentView(ScrollView(this).apply { addView(root) })
+    }
+
+    private fun showPackagePickerDialog(onPicked: (String) -> Unit) {
+        val pm = packageManager
+        val apps = pm.getInstalledApplications(android.content.pm.PackageManager.GET_META_DATA)
+
+        val launchableApps = apps.filter { app ->
+            app.packageName != packageName &&
+            pm.getLaunchIntentForPackage(app.packageName) != null
+        }.sortedBy { pm.getApplicationLabel(it).toString().lowercase() }
+
+        val labels = launchableApps.map { pm.getApplicationLabel(it).toString() }.toTypedArray()
+
+        AlertDialog.Builder(this)
+            .setTitle("Выберите приложение для монитора")
+            .setItems(labels) { _, which ->
+                val picked = launchableApps[which].packageName
+                onPicked(picked)
+            }
+            .setNegativeButton("Отмена", null)
+            .setNeutralButton("Очистить") { _, _ ->
+                onPicked("")
+            }
+            .show()
+    }
+
+    private fun formatSeconds(sec: Float): String {
+        return if (sec % 1.0f == 0.0f) sec.toInt().toString() else sec.toString()
+    }
+
+    private fun createAppRow(label: String, icon: Drawable, isSelected: Boolean, pkg: String): LinearLayout {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(20, 20, 20, 20)
+            setBackgroundColor(if (isSelected) colorGreen else colorGray)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 6, 0, 6) }
+        }
+
+        row.addView(ImageView(this).apply {
+            setImageDrawable(icon)
+            layoutParams = LinearLayout.LayoutParams(100, 100).apply { setMargins(0, 0, 20, 0) }
+        })
+
+        row.addView(TextView(this).apply {
+            text = if (isSelected) "✓  $label" else "○  $label"
+            textSize = 16f
+            setTextColor(if (isSelected) colorGreenText else colorGrayText)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+
+        val delayInput = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER
+            setText(prefs.getLong("delay_$pkg", 15L).toString())
+            textSize = 14f
+            width = 120
+            hint = "15"
+            setPadding(10, 10, 10, 10)
+            setTextColor(colorGrayText)
+            addTextChangedListener(object : TextWatcher {
+                override fun afterTextChanged(s: Editable?) {
+                    val delay = s?.toString()?.toLongOrNull()
+                    if (delay != null && delay in 0L..600L) {
+                        prefs.edit().putLong("delay_$pkg", delay).apply()
+                    }
+                }
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            })
+        }
+        row.addView(delayInput)
+
+        val bgCheck = CheckBox(this).apply {
+            text = "Фон"
+            textSize = 12f
+            setTextColor(if (isSelected) colorGreenText else colorGrayText)
+            isChecked = prefs.getBoolean("bg_$pkg", false)
+            setOnCheckedChangeListener { _, checked ->
+                prefs.edit().putBoolean("bg_$pkg", checked).apply()
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(8, 0, 0, 0) }
+        }
+        row.addView(bgCheck)
+
+        row.setOnClickListener {
+            val currentSet = prefs.getStringSet("target_packages", emptySet())?.toMutableSet() ?: mutableSetOf()
+            if (currentSet.contains(pkg)) {
+                currentSet.remove(pkg)
+                Toast.makeText(this@MainActivity, "Автозапуск отключён", Toast.LENGTH_SHORT).show()
+            } else {
+                currentSet.add(pkg)
+                Toast.makeText(this@MainActivity, "Выбрано: $label", Toast.LENGTH_SHORT).show()
+            }
+            prefs.edit().putStringSet("target_packages", currentSet).apply()
+            recreate()
+        }
+
+        return row
+    }
+}
