@@ -6,13 +6,14 @@ import android.content.Intent
 import android.os.Build
 
 class SystemEventReceiver : BroadcastReceiver() {
+
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.action ?: return
         LogWriter.init(context)
         LogWriter.log("SystemEvent: $action")
 
         when (action) {
-            // Загрузка — не форсируем, пусть BootReceiver отработает
+            // Загрузка — обычный запуск с задержкой (не форсируем)
             Intent.ACTION_BOOT_COMPLETED,
             "android.intent.action.QUICKBOOT_POWERON",
             "com.htc.intent.action.QUICKBOOT_POWERON" -> {
@@ -20,20 +21,20 @@ class SystemEventReceiver : BroadcastReceiver() {
                 startService(context, forceCheck = false)
             }
 
-            // Пробуждение экрана — форсируем
+            // Пробуждение экрана — форс-проверка
             Intent.ACTION_SCREEN_ON,
             Intent.ACTION_USER_PRESENT -> {
                 LogWriter.log("Экран включён — форс-проверка")
                 startService(context, forceCheck = true)
             }
 
-            // Зарядка подключена — форсируем
+            // Зарядка подключена — форс-проверка
             Intent.ACTION_POWER_CONNECTED -> {
                 LogWriter.log("Зарядка подключена — форс-проверка")
                 startService(context, forceCheck = true)
             }
 
-            // Wi-Fi / сеть — форсируем
+            // Сеть изменилась — форс-проверка
             "android.net.wifi.STATE_CHANGE",
             "android.net.conn.CONNECTIVITY_CHANGE" -> {
                 LogWriter.log("Сеть изменилась — форс-проверка")
@@ -46,6 +47,11 @@ class SystemEventReceiver : BroadcastReceiver() {
         }
     }
 
+    /**
+     * Запускает KeepAliveService.
+     * Если [forceCheck] = true — сервис немедленно запускает приложения,
+     * без ожидания задержки.
+     */
     private fun startService(context: Context, forceCheck: Boolean) {
         val svc = Intent(context, KeepAliveService::class.java)
         if (forceCheck) {
