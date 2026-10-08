@@ -10,6 +10,8 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Process
 import android.provider.Settings
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.Gravity
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
@@ -267,7 +269,7 @@ class MainActivity : AppCompatActivity() {
         })
 
         root.addView(TextView(this).apply {
-            text = "Тап по строке — выбор. Фон — свернуть после запуска."
+            text = "Тап по строке — выбор. Фон — свернуть после запуска. Задержка сохраняется автоматически."
             textSize = 12f
             setPadding(0, 0, 0, 10)
         })
@@ -329,7 +331,7 @@ class MainActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
 
-        // Поле задержки
+        // Поле задержки с автосохранением
         val delayInput = EditText(this).apply {
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
             val savedDelay = prefs.getLong("delay_$pkg", 15L)
@@ -339,6 +341,18 @@ class MainActivity : AppCompatActivity() {
             hint = "15"
             setPadding(10, 10, 10, 10)
             setTextColor(colorGrayText)
+
+            // Автосохранение при каждом изменении текста
+            addTextChangedListener(object : TextWatcher {
+                override fun afterTextChanged(s: Editable?) {
+                    val delay = s?.toString()?.toLongOrNull()
+                    if (delay != null && delay in 0L..600L) {
+                        prefs.edit().putLong("delay_$pkg", delay).apply()
+                    }
+                }
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            })
         }
         row.addView(delayInput)
 
@@ -368,11 +382,8 @@ class MainActivity : AppCompatActivity() {
                 currentSet.add(pkg)
                 Toast.makeText(this@MainActivity, "Выбрано: $label", Toast.LENGTH_SHORT).show()
             }
-            val delay = delayInput.text.toString().toLongOrNull() ?: 15L
-            prefs.edit()
-                .putStringSet("target_packages", currentSet)
-                .putLong("delay_$pkg", delay)
-                .apply()
+            // Задержку не трогаем — она уже сохранена через TextWatcher
+            prefs.edit().putStringSet("target_packages", currentSet).apply()
             recreate()
         }
 
