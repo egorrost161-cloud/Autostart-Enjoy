@@ -97,7 +97,6 @@ class MainActivity : AppCompatActivity() {
         return pm.isIgnoringBatteryOptimizations(packageName)
     }
 
-    /** Открывает системный экран уведомлений для нашего приложения. */
     private fun openNotificationSettings() {
         val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
         intent.putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
@@ -105,7 +104,6 @@ class MainActivity : AppCompatActivity() {
         try {
             startActivity(intent)
         } catch (e: Exception) {
-            // Fallback для старых Android
             try {
                 val fallback = Intent("android.settings.APP_NOTIFICATION_SETTINGS")
                 fallback.putExtra("app_package", packageName)
@@ -117,7 +115,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Универсальная кнопка разрешения: зелёная с ✓ если выдано, серая с ○ если нет. */
     private fun permissionButton(title: String, granted: Boolean, onClick: () -> Unit): Button {
         return Button(this).apply {
             text = if (granted) "✓  $title" else "○  $title"
@@ -152,7 +149,6 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, 20, 0, 20)
         })
 
-        // 1. Наложение поверх окон
         root.addView(permissionButton("Наложение поверх окон", overlayGranted()) {
             if (!overlayGranted()) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -163,7 +159,6 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
-        // 2. Статистика использования
         root.addView(permissionButton("Статистика использования", hasUsageStatsPermission()) {
             if (!hasUsageStatsPermission()) {
                 startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
@@ -173,7 +168,6 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
-        // 3. Игнор батареи
         root.addView(permissionButton("Игнор батареи", batteryGranted()) {
             if (!batteryGranted()) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -190,7 +184,6 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
-        // 4. Уведомления — открываем системные настройки уведомлений
         root.addView(permissionButton("Уведомления", areNotificationsEnabled()) {
             if (!areNotificationsEnabled()) {
                 openNotificationSettings()
@@ -200,7 +193,6 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
-        // Кнопка обновить статус
         root.addView(Button(this).apply {
             text = "ОБНОВИТЬ СТАТУС"
             layoutParams = LinearLayout.LayoutParams(
@@ -210,7 +202,6 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { recreate() }
         })
 
-        // Кнопка продолжить
         root.addView(Button(this).apply {
             text = "ПРОДОЛЖИТЬ"
             layoutParams = LinearLayout.LayoutParams(
@@ -275,6 +266,12 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, 30, 0, 10)
         })
 
+        root.addView(TextView(this).apply {
+            text = "Тап по строке — выбор. Фон — свернуть после запуска."
+            textSize = 12f
+            setPadding(0, 0, 0, 10)
+        })
+
         val scrollView = ScrollView(this)
         val listLayout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
 
@@ -282,14 +279,11 @@ class MainActivity : AppCompatActivity() {
         val apps = pm.getInstalledApplications(android.content.pm.PackageManager.GET_META_DATA)
         val savedPackages = prefs.getStringSet("target_packages", emptySet()) ?: emptySet()
 
-        // Собираем только запускаемые приложения (кроме себя)
         val launchableApps = apps.filter { app ->
             app.packageName != packageName &&
             pm.getLaunchIntentForPackage(app.packageName) != null
         }
 
-        // === ГЛАВНОЕ ИЗМЕНЕНИЕ: сортировка ===
-        // Сначала выбранные (по алфавиту), потом невыбранные (по алфавиту).
         val sortedApps = launchableApps.sortedWith(
             compareByDescending<android.content.pm.ApplicationInfo> {
                 savedPackages.contains(it.packageName)
@@ -335,6 +329,7 @@ class MainActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
 
+        // Поле задержки
         val delayInput = EditText(this).apply {
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
             val savedDelay = prefs.getLong("delay_$pkg", 15L)
@@ -347,6 +342,23 @@ class MainActivity : AppCompatActivity() {
         }
         row.addView(delayInput)
 
+        // Чекбокс «Фон»
+        val bgCheck = CheckBox(this).apply {
+            text = "Фон"
+            textSize = 12f
+            setTextColor(if (isSelected) colorGreenText else colorGrayText)
+            isChecked = prefs.getBoolean("bg_$pkg", false)
+            setOnCheckedChangeListener { _, checked ->
+                prefs.edit().putBoolean("bg_$pkg", checked).apply()
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(8, 0, 0, 0) }
+        }
+        row.addView(bgCheck)
+
+        // Клик по строке — выбор/снятие
         row.setOnClickListener {
             val currentSet = prefs.getStringSet("target_packages", emptySet())?.toMutableSet() ?: mutableSetOf()
             if (currentSet.contains(pkg)) {
