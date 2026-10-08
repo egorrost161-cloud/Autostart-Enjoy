@@ -36,43 +36,64 @@ class KeepAliveService : Service() {
         // Отменяем старые задачи, чтобы не было дублей
         handler.removeCallbacksAndMessages(null)
 
-        // Проверяем FORCE_CHECK — пришёл ли запрос на немедленный запуск
         val forceCheck = intent?.getBooleanExtra("FORCE_CHECK", false) ?: false
 
         if (forceCheck) {
             LogWriter.log("FORCE_CHECK — немедленный запуск ${targetSet.size} приложений")
             for (pkg in targetSet) {
-                launchApp(pkg, 0L)
+                launchApp(pkg, 0L, prefs)
             }
             return START_STICKY
         }
 
-        // Обычный режим — планируем запуски по индивидуальным задержкам от старта
         LogWriter.log("Сервис запущен, пакетов: ${targetSet.size}")
         for (pkg in targetSet) {
             val delaySec = prefs.getLong("delay_$pkg", 15L).coerceAtLeast(1L)
             val delayMs = delaySec * 1000
             LogWriter.log("Запланирован $pkg через ${delaySec}с от старта")
             handler.postDelayed({
-                launchApp(pkg, delaySec)
+                launchApp(pkg, delaySec, prefs)
             }, delayMs)
         }
 
         return START_STICKY
     }
 
-    private fun launchApp(pkg: String, delaySec: Long) {
+    private fun launchApp(pkg: String, delaySec: Long, prefs: android.content.SharedPreferences) {
         try {
             val launchIntent = packageManager.getLaunchIntentForPackage(pkg)
             if (launchIntent != null) {
                 launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 startActivity(launchIntent)
                 LogWriter.log("+ Запущен $pkg (задержка ${delaySec}с)")
+
+                // Проверяем, включён ли режим «Фон»
+                val bgMode = prefs.getBoolean("bg_$pkg", false)
+                if (bgMode) {
+                    // Через 1.5 секунды возвращаемся на домашний экран
+                    handler.postDelayed({
+                        goHome()
+                        LogWriter.log("~ $pkg свёрнут в фон")
+                    }, 1500L)
+                }
             } else {
                 LogWriter.log("- Не найдена точка входа для $pkg")
             }
         } catch (e: Exception) {
             LogWriter.log("- ОШИБКА запуска $pkg: ${e.message}")
+        }
+    }
+
+    /** Возвращает на домашний экран (эмулирует нажатие Home). */
+    private fun goHome() {
+        try {
+            val home = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_HOME)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(home)
+        } catch (e: Exception) {
+            LogWriter.log("- Ошибка возврата домой: ${e.message}")
         }
     }
 
