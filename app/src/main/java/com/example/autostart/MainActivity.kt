@@ -12,10 +12,12 @@ import android.provider.Settings
 import android.view.Gravity
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.NotificationManagerCompat
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var prefs: SharedPreferences
+    private val REQUEST_NOTIF = 1001
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -38,7 +40,8 @@ class MainActivity : AppCompatActivity() {
             pm.isIgnoringBatteryOptimizations(packageName)
         } else true
         val usageStats = hasUsageStatsPermission()
-        return overlay && battery && usageStats
+        val notifications = areNotificationsEnabled()
+        return overlay && battery && usageStats && notifications
     }
 
     private fun hasUsageStatsPermission(): Boolean {
@@ -53,6 +56,10 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             return false
         }
+    }
+
+    private fun areNotificationsEnabled(): Boolean {
+        return NotificationManagerCompat.from(this).areNotificationsEnabled()
     }
 
     private fun overlayLabel(): String {
@@ -70,6 +77,10 @@ class MainActivity : AppCompatActivity() {
         return if (pm.isIgnoringBatteryOptimizations(packageName)) "[OK] Игнор батареи" else "[--] Игнор батареи"
     }
 
+    private fun notificationsLabel(): String {
+        return if (areNotificationsEnabled()) "[OK] Уведомления" else "[--] Уведомления"
+    }
+
     private fun showSetupScreen() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -83,7 +94,7 @@ class MainActivity : AppCompatActivity() {
         })
 
         root.addView(TextView(this).apply {
-            text = "\nДля работы нужно 3 разрешения.\nНажми на каждое — откроется системная настройка.\nПотом нажми «Обновить статус».\n"
+            text = "\nДля работы нужно 4 разрешения.\nНажми на каждое — откроется системная настройка.\nПотом нажми «Обновить статус».\n"
             textSize = 15f
             gravity = Gravity.CENTER
             setPadding(0, 20, 0, 20)
@@ -133,6 +144,23 @@ class MainActivity : AppCompatActivity() {
         })
 
         root.addView(Button(this).apply {
+            text = notificationsLabel()
+            setOnClickListener {
+                if (!areNotificationsEnabled()) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), REQUEST_NOTIF)
+                    } else {
+                        val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                        intent.putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                        startActivity(intent)
+                    }
+                } else {
+                    Toast.makeText(this@MainActivity, "Уже выдано", Toast.LENGTH_SHORT).show()
+                }
+            }
+        })
+
+        root.addView(Button(this).apply {
             text = "ОБНОВИТЬ СТАТУС"
             setOnClickListener { recreate() }
         })
@@ -150,6 +178,13 @@ class MainActivity : AppCompatActivity() {
         })
 
         setContentView(root)
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQUEST_NOTIF) {
+            recreate()
+        }
     }
 
     private fun showMainScreen() {
