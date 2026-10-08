@@ -11,7 +11,7 @@ class BootReceiver : BroadcastReceiver() {
         if (action == Intent.ACTION_BOOT_COMPLETED || action == "android.intent.action.QUICKBOOT_POWERON") {
             LogWriter.init(context)
             LogWriter.log("BOOT_COMPLETED получен, стартуем сервис")
-            
+
             val svc = Intent(context, KeepAliveService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(svc)
