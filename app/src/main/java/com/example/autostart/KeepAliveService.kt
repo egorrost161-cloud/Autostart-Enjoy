@@ -1,6 +1,7 @@
 package com.example.autostart
 
 import android.app.*
+import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
@@ -13,6 +14,7 @@ import androidx.core.app.NotificationCompat
 class KeepAliveService : Service() {
 
     private val handler = Handler(Looper.getMainLooper())
+    private var monitorRunnable: Runnable? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -26,6 +28,15 @@ class KeepAliveService : Service() {
         startForeground(101, notification)
 
         val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+        val forceCheck = intent?.getBooleanExtra("FORCE_CHECK", false) ?: false
+
+        if (forceCheck) {
+            LogWriter.log("FORCE_CHECK — проверка только лаунчера")
+            checkAndLaunchMonitorPackage(prefs, force = true)
+            return START_STICKY
+        }
+
+        // Обычный режим: автозапуск всех приложений + старт монитора
         val targetSet = prefs.getStringSet("target_packages", emptySet()) ?: emptySet()
 
         if (targetSet.isEmpty()) {
@@ -35,16 +46,6 @@ class KeepAliveService : Service() {
         }
 
         handler.removeCallbacksAndMessages(null)
-
-        val forceCheck = intent?.getBooleanExtra("FORCE_CHECK", false) ?: false
-
-        if (forceCheck) {
-            LogWriter.log("FORCE_CHECK — немедленный запуск ${targetSet.size} приложений")
-            for (pkg in targetSet) {
-                launchApp(pkg, 0L, prefs)
-            }
-            return START_STICKY
-        }
 
         LogWriter.log("Сервис запущен, пакетов: ${targetSet.size}")
         for (pkg in targetSet) {
@@ -56,8 +57,160 @@ class KeepAliveService : Service() {
             }, delayMs)
         }
 
+        // Стартуем монитор (если включён)
+        startMonitor(prefs)
+
         return START_STICKY
     }
+
+    // ============ МОНИТОР ============
+
+    private fun startMonitor(prefs: SharedPreferences) {
+        stopMonitor()
+
+        val enabled = prefs.getBoolean("monitor_enabled", false)
+        if (!enabled) {
+            LogWriter.log("Монитор выключен")
+            return
+        }
+
+        val monitorPkg = prefs.getString("monitor_package", "") ?: ""
+        if (monitorPkg.isEmpty()) {
+            LogWriter.log("Монитор: пакет не задан — не запускаем")
+            return
+        }
+
+        val intervalSec = prefs.getLong("monitor_interval_sec", 30L).coerceIn(5L, 300L)
+        val intervalMs = intervalSec * 1000
+
+        LogWriter.log("Монитор запущен: пакет=$monitorPkg, интервал=${intervalSec}с")
+
+        monitorRunnable = object : Runnable {
+            override fun run() {
+                val stillEnabled = prefs.getBoolean("monitor_enabled", false)
+                if (!stillEnabled) {
+                    LogWriter.log("Монитор отключён — выход")
+                    monitorRunnable = null
+                    return
+                }
+                checkAndLaunchMonitorPackage(prefs, force = false)
+                handler.postDelayed(this, intervalMs)
+            }
+        }
+        handler.postDelayed(monitorRunnable!!, intervalMs)
+    }
+
+    private fun stopMonitor() {
+        monitorRunnable?.let { handler.removeCallbacks(it) }
+        monitorRunnable = null
+    }
+
+    /**
+     * Проверяет активность лаунчера:
+     *   - Если лаунчер сейчас на переднем плане → ничего.
+     *   - Если лаунчер был активен последние N минут → ничего.
+     *   - Если лаунчер неактивен N+ минут ИЛИ [force]=true и он убит → запускаем.
+     */
+    private fun checkAndLaunchMonitorPackage(prefs: SharedPreferences, force: Boolean) {
+        val monitorPkg = prefs.getString("monitor_package", "") ?: ""
+        if (monitorPkg.isEmpty()) {
+            LogWriter.log("Монитор: пакет не задан")
+            return
+        }
+
+        val idleMinutes = prefs.getLong("monitor_idle_minutes", 30L).coerceIn(1L, 240L)
+        val idleMs = idleMinutes * 60 * 1000
+
+        // Проверяем, когда лаунчер был активен последний раз
+        val lastUsed = getLastTimeUsed(monitorPkg)
+        val now = System.currentTimeMillis()
+        val idleSinceMs = if (lastUsed > 0) (now - lastUsed) else Long.MAX_VALUE
+
+        val idleMinutesActual = idleSinceMs / 60000
+
+        // Сейчас лаунчер на переднем плане?
+        val isInForeground = isPackageInForeground(monitorPkg)
+
+        if (isInForeground) {
+            LogWriter.log("Монитор: $monitorPkg уже на переднем плане — ок")
+            return
+        }
+
+        // Форс-проверка: если лаунчер убит (нет в списке активных) — запускаем сразу
+        if (force) {
+            LogWriter.log("Монитор(FORCE): лаунчер неактивен ${idleMinutesActual}мин — запускаем")
+            launchMonitorPackage(monitorPkg)
+            return
+        }
+
+        // Обычная проверка: если неактивен больше порога — запускаем
+        if (idleSinceMs >= idleMs) {
+            LogWriter.log("Монитор: лаунчер неактивен ${idleMinutesActual}мин (порог ${idleMinutes}мин) — запускаем")
+            launchMonitorPackage(monitorPkg)
+        } else {
+            LogWriter.log("Монитор: лаунчер неактивен ${idleMinutesActual}мин — ещё рано")
+        }
+    }
+
+    /** Возвращает timestamp (в мс) последнего использования пакета, или 0 если неизвестно. */
+    private fun getLastTimeUsed(pkg: String): Long {
+        try {
+            val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+            val now = System.currentTimeMillis()
+            // Смотрим статистику за последние 24 часа
+            val stats = usm.queryUsageStats(
+                UsageStatsManager.INTERVAL_DAILY,
+                now - 24 * 60 * 60 * 1000,
+                now
+            )
+            if (stats == null) return 0
+            for (s in stats) {
+                if (s.packageName == pkg) {
+                    return s.lastTimeUsed
+                }
+            }
+        } catch (e: Exception) {
+            LogWriter.log("getLastTimeUsed error: ${e.message}")
+        }
+        return 0
+    }
+
+    /** Проверяет, находится ли пакет на переднем плане (по последним событиям использования). */
+    private fun isPackageInForeground(pkg: String): Boolean {
+        try {
+            val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+            val now = System.currentTimeMillis()
+            val stats = usm.queryEvents(now - 60 * 1000, now)
+            var lastForegroundPkg: String? = null
+            val event = android.app.usage.UsageEvents.Event()
+            while (stats.hasNextEvent()) {
+                stats.getNextEvent(event)
+                if (event.eventType == android.app.usage.UsageEvents.Event.MOVE_TO_FOREGROUND) {
+                    lastForegroundPkg = event.packageName
+                }
+            }
+            return lastForegroundPkg == pkg
+        } catch (e: Exception) {
+            return false
+        }
+    }
+
+    private fun launchMonitorPackage(pkg: String) {
+        try {
+            val launchIntent = packageManager.getLaunchIntentForPackage(pkg)
+            if (launchIntent != null) {
+                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(launchIntent)
+                LogWriter.log("+ Монитор запустил $pkg")
+            } else {
+                LogWriter.log("- Монитор: пакет $pkg не найден")
+            }
+        } catch (e: Exception) {
+            LogWriter.log("- Монитор: ошибка запуска $pkg: ${e.message}")
+        }
+    }
+
+    // ============ АВТОЗАПУСК ============
 
     private fun launchApp(pkg: String, delaySec: Long, prefs: SharedPreferences) {
         try {
@@ -69,11 +222,9 @@ class KeepAliveService : Service() {
 
                 val bgMode = prefs.getBoolean("bg_$pkg", false)
                 if (bgMode) {
-                    // Читаем паузу в СЕКУНДАХ, диапазон 0.5 – 10
                     val goHomeSec = prefs.getFloat("bg_go_home_delay_sec", 1.5f)
                         .coerceIn(0.5f, 10.0f)
                     val goHomeMs = (goHomeSec * 1000).toLong()
-
                     handler.postDelayed({
                         goHome()
                         LogWriter.log("~ $pkg свёрнут в фон (пауза ${goHomeSec}с)")
@@ -99,6 +250,8 @@ class KeepAliveService : Service() {
         }
     }
 
+    // ============ УВЕДОМЛЕНИЕ ============
+
     private fun buildNotification(): Notification {
         val openApp = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
@@ -110,7 +263,7 @@ class KeepAliveService : Service() {
 
         return NotificationCompat.Builder(this, "autostart_channel")
             .setContentTitle("AutoStart Pro активен")
-            .setContentText("Следит за запуском приложений")
+            .setContentText("Автозапуск и монитор лаунчера")
             .setSmallIcon(android.R.drawable.ic_menu_manage)
             .setContentIntent(pi)
             .setOngoing(true)
@@ -134,6 +287,7 @@ class KeepAliveService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         handler.removeCallbacksAndMessages(null)
+        monitorRunnable = null
         LogWriter.log("=== Сервис остановлен ===")
     }
 
