@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Разрешения -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -10,6 +11,8 @@
     <uses-permission android:name="android.permission.GET_TASKS" />
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <application
         android:allowBackup="true"
@@ -31,7 +34,7 @@
             android:enabled="true"
             android:exported="false" />
 
-        <!-- Основной BootReceiver: только загрузка системы -->
+        <!-- Основной BootReceiver: только загрузка -->
         <receiver
             android:name=".BootReceiver"
             android:enabled="true"
@@ -43,26 +46,80 @@
             </intent-filter>
         </receiver>
 
-        <!-- Дополнительные события для надёжного автозапуска -->
+        <!-- Расширенный SystemEventReceiver: 13 событий для надёжности -->
         <receiver
             android:name=".SystemEventReceiver"
             android:enabled="true"
             android:exported="true">
+
+            <!-- 1. Зарядка подключена -->
             <intent-filter android:priority="500">
                 <action android:name="android.intent.action.ACTION_POWER_CONNECTED" />
             </intent-filter>
+
+            <!-- 2. Зарядка отключена -->
+            <intent-filter android:priority="500">
+                <action android:name="android.intent.action.ACTION_POWER_DISCONNECTED" />
+            </intent-filter>
+
+            <!-- 3. Экран включён -->
             <intent-filter android:priority="100">
                 <action android:name="android.intent.action.SCREEN_ON" />
             </intent-filter>
+
+            <!-- 4. Экран выключен -->
+            <intent-filter android:priority="100">
+                <action android:name="android.intent.action.SCREEN_OFF" />
+            </intent-filter>
+
+            <!-- 5. Пользователь разблокировал экран -->
             <intent-filter android:priority="100">
                 <action android:name="android.intent.action.USER_PRESENT" />
             </intent-filter>
+
+            <!-- 6. Wi-Fi состояние изменилось -->
+            <intent-filter android:priority="100">
+                <action android:name="android.net.wifi.WIFI_STATE_CHANGED" />
+            </intent-filter>
+
+            <!-- 7. Wi-Fi подключён/отключён -->
             <intent-filter android:priority="100">
                 <action android:name="android.net.wifi.STATE_CHANGE" />
             </intent-filter>
+
+            <!-- 8. Сетевое соединение изменилось -->
             <intent-filter android:priority="100">
                 <action android:name="android.net.conn.CONNECTIVITY_CHANGE" />
             </intent-filter>
+
+            <!-- 9. Авиарежим -->
+            <intent-filter android:priority="500">
+                <action android:name="android.intent.action.AIRPLANE_MODE" />
+            </intent-filter>
+
+            <!-- 10. Гарнитура подключена -->
+            <intent-filter android:priority="500">
+                <action android:name="android.intent.action.HEADSET_PLUG" />
+            </intent-filter>
+
+            <!-- 11. SD-карта смонтирована -->
+            <intent-filter android:priority="500">
+                <action android:name="android.intent.action.MEDIA_MOUNTED" />
+                <data android:scheme="file" />
+            </intent-filter>
+
+            <!-- 12. SD-карта извлечена -->
+            <intent-filter android:priority="500">
+                <action android:name="android.intent.action.MEDIA_EJECT" />
+                <data android:scheme="file" />
+            </intent-filter>
+
+            <!-- 13. SD-карта удалена -->
+            <intent-filter android:priority="500">
+                <action android:name="android.intent.action.MEDIA_REMOVED" />
+                <data android:scheme="file" />
+            </intent-filter>
+
         </receiver>
 
     </application>
