@@ -221,7 +221,12 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
-        setContentView(root)
+        // Оборачиваем экран настройки в ScrollView — чтобы на маленьких экранах
+        // можно было прокрутить вниз к кнопке "ПРОДОЛЖИТЬ"
+        val scroll = ScrollView(this).apply {
+            addView(root)
+        }
+        setContentView(scroll)
     }
 
     private fun showMainScreen() {
@@ -250,9 +255,7 @@ class MainActivity : AppCompatActivity() {
         })
 
         val bgDelayInput = EditText(this).apply {
-            // Принимаем дробные числа: 0.5, 1, 1.5, 2
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-            // Читаем сохранённое значение в СЕКУНДАХ
             val savedSec = prefs.getFloat("bg_go_home_delay_sec", 1.5f)
             setText(formatSeconds(savedSec))
             textSize = 14f
@@ -263,7 +266,6 @@ class MainActivity : AppCompatActivity() {
             addTextChangedListener(object : TextWatcher {
                 override fun afterTextChanged(s: Editable?) {
                     val sec = s?.toString()?.replace(',', '.')?.toFloatOrNull() ?: return
-                    // Диапазон: 0.5 – 10 сек
                     if (sec < 0.5f || sec > 10.0f) return
                     prefs.edit().putFloat("bg_go_home_delay_sec", sec).apply()
                 }
@@ -276,7 +278,7 @@ class MainActivity : AppCompatActivity() {
         root.addView(bgDelayRow)
 
         root.addView(TextView(this).apply {
-            text = "Диапазон: 0.5 – 10 сек. По умолчанию: 1.5 сек. Меньше 0.5 — риск обрыва воспроизведения."
+            text = "Диапазон: 0.5 – 10 сек. По умолчанию: 1.5 сек."
             textSize = 11f
             setPadding(0, 0, 0, 10)
         })
@@ -320,9 +322,8 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, 0, 0, 10)
         })
 
-        val scrollView = ScrollView(this)
-        val listLayout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-
+        // Список приложений добавляем прямо в root —
+        // НЕ оборачиваем в отдельный ScrollView
         val pm = packageManager
         val apps = pm.getInstalledApplications(android.content.pm.PackageManager.GET_META_DATA)
         val savedPackages = prefs.getStringSet("target_packages", emptySet()) ?: emptySet()
@@ -344,16 +345,17 @@ class MainActivity : AppCompatActivity() {
             val label = pm.getApplicationLabel(app).toString()
             val icon = pm.getApplicationIcon(app)
             val isSelected = savedPackages.contains(app.packageName)
-            listLayout.addView(createAppRow(label, icon, isSelected, app.packageName))
+            root.addView(createAppRow(label, icon, isSelected, app.packageName))
         }
 
-        scrollView.addView(listLayout)
-        root.addView(scrollView, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
-
-        setContentView(root)
+        // Один общий ScrollView на весь экран — скроллится всё:
+        // заголовок, поле паузы, кнопки, список приложений
+        val scroll = ScrollView(this).apply {
+            addView(root)
+        }
+        setContentView(scroll)
     }
 
-    /** Форматирует секунды: 1.5 → "1.5", 1.0 → "1" */
     private fun formatSeconds(sec: Float): String {
         return if (sec % 1.0f == 0.0f) sec.toInt().toString() else sec.toString()
     }
