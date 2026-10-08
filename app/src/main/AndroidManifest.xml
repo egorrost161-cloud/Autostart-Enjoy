@@ -31,7 +31,7 @@
             android:enabled="true"
             android:exported="false" />
 
-        <!-- Основной BootReceiver: только загрузка -->
+        <!-- Основной BootReceiver: только загрузка системы -->
         <receiver
             android:name=".BootReceiver"
             android:enabled="true"
@@ -39,10 +39,11 @@
             <intent-filter android:priority="1000">
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
         </receiver>
 
-        <!-- Дополнительные события для надёжности -->
+        <!-- Дополнительные события для надёжного автозапуска -->
         <receiver
             android:name=".SystemEventReceiver"
             android:enabled="true"
