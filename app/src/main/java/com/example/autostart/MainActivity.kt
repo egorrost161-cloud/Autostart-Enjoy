@@ -1,11 +1,13 @@
 package com.example.autostart
 
+import android.app.AppOpsManager
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.drawable.Drawable
 import android.os.Build
 import android.os.Bundle
+import android.os.Process
 import android.provider.Settings
 import android.view.Gravity
 import android.widget.*
@@ -35,7 +37,37 @@ class MainActivity : AppCompatActivity() {
             val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
             pm.isIgnoringBatteryOptimizations(packageName)
         } else true
-        return overlay && battery
+        val usageStats = hasUsageStatsPermission()
+        return overlay && battery && usageStats
+    }
+
+    private fun hasUsageStatsPermission(): Boolean {
+        try {
+            val appOps = getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
+            val mode = appOps.checkOpNoThrow(
+                AppOpsManager.OPSTR_GET_USAGE_STATS,
+                Process.myUid(),
+                packageName
+            )
+            return mode == AppOpsManager.MODE_ALLOWED
+        } catch (e: Exception) {
+            return false
+        }
+    }
+
+    private fun overlayLabel(): String {
+        val granted = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && Settings.canDrawOverlays(this)
+        return if (granted) "[OK] Наложение поверх окон" else "[--] Наложение поверх окон"
+    }
+
+    private fun usageStatsLabel(): String {
+        return if (hasUsageStatsPermission()) "[OK] Статистика использования" else "[--] Статистика использования"
+    }
+
+    private fun batteryLabel(): String {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return "[OK] Игнор батареи"
+        val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+        return if (pm.isIgnoringBatteryOptimizations(packageName)) "[OK] Игнор батареи" else "[--] Игнор батареи"
     }
 
     private fun showSetupScreen() {
@@ -51,15 +83,14 @@ class MainActivity : AppCompatActivity() {
         })
 
         root.addView(TextView(this).apply {
-            text = "\nДля работы нужно 2 разрешения.\nНажми на каждое — откроется системная настройка.\nПотом нажми «Обновить статус».\n"
+            text = "\nДля работы нужно 3 разрешения.\nНажми на каждое — откроется системная настройка.\nПотом нажми «Обновить статус».\n"
             textSize = 15f
             gravity = Gravity.CENTER
             setPadding(0, 20, 0, 20)
         })
 
         root.addView(Button(this).apply {
-            text = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && Settings.canDrawOverlays(this@MainActivity))
-                "[OK] Наложение поверх окон" else "[--] Наложение поверх окон"
+            text = overlayLabel()
             setOnClickListener {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this@MainActivity)) {
                     startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName")))
@@ -70,7 +101,19 @@ class MainActivity : AppCompatActivity() {
         })
 
         root.addView(Button(this).apply {
-            text = "[--] Игнор батареи"
+            text = usageStatsLabel()
+            setOnClickListener {
+                if (!hasUsageStatsPermission()) {
+                    startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                    Toast.makeText(this@MainActivity, "Найди AutoStart Pro и включи доступ", Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(this@MainActivity, "Уже выдано", Toast.LENGTH_SHORT).show()
+                }
+            }
+        })
+
+        root.addView(Button(this).apply {
+            text = batteryLabel()
             setOnClickListener {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                     val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
@@ -99,6 +142,8 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener {
                 if (areAllPermissionsGranted()) {
                     prefs.edit().putBoolean("setup_done", true).apply()
+                } else {
+                    Toast.makeText(this@MainActivity, "Не все разрешения выданы", Toast.LENGTH_SHORT).show()
                 }
                 recreate()
             }
