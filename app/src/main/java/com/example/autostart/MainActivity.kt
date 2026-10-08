@@ -11,6 +11,7 @@ import android.os.Bundle
 import android.os.Process
 import android.provider.Settings
 import android.text.Editable
+import android.text.InputType
 import android.text.TextWatcher
 import android.view.Gravity
 import android.widget.*
@@ -235,6 +236,51 @@ class MainActivity : AppCompatActivity() {
             textSize = 24f
         })
 
+        // === Блок настроек сворачивания в фон (в секундах) ===
+        val bgDelayRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 10, 0, 10)
+        }
+
+        bgDelayRow.addView(TextView(this).apply {
+            text = "Пауза перед сворачиванием (сек):"
+            textSize = 14f
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+
+        val bgDelayInput = EditText(this).apply {
+            // Принимаем дробные числа: 0.5, 1, 1.5, 2
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            // Читаем сохранённое значение в СЕКУНДАХ
+            val savedSec = prefs.getFloat("bg_go_home_delay_sec", 1.5f)
+            setText(formatSeconds(savedSec))
+            textSize = 14f
+            width = 220
+            hint = "1.5"
+            setPadding(10, 10, 10, 10)
+
+            addTextChangedListener(object : TextWatcher {
+                override fun afterTextChanged(s: Editable?) {
+                    val sec = s?.toString()?.replace(',', '.')?.toFloatOrNull() ?: return
+                    // Диапазон: 0.5 – 10 сек
+                    if (sec < 0.5f || sec > 10.0f) return
+                    prefs.edit().putFloat("bg_go_home_delay_sec", sec).apply()
+                }
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            })
+        }
+        bgDelayRow.addView(bgDelayInput)
+
+        root.addView(bgDelayRow)
+
+        root.addView(TextView(this).apply {
+            text = "Диапазон: 0.5 – 10 сек. По умолчанию: 1.5 сек. Меньше 0.5 — риск обрыва воспроизведения."
+            textSize = 11f
+            setPadding(0, 0, 0, 10)
+        })
+
         root.addView(Button(this).apply {
             text = "Запустить сервис сейчас"
             layoutParams = LinearLayout.LayoutParams(
@@ -269,7 +315,7 @@ class MainActivity : AppCompatActivity() {
         })
 
         root.addView(TextView(this).apply {
-            text = "Тап по строке — выбор. Фон — свернуть после запуска. Задержка сохраняется автоматически."
+            text = "Тап по строке — выбор. Фон — свернуть после запуска."
             textSize = 12f
             setPadding(0, 0, 0, 10)
         })
@@ -307,6 +353,11 @@ class MainActivity : AppCompatActivity() {
         setContentView(root)
     }
 
+    /** Форматирует секунды: 1.5 → "1.5", 1.0 → "1" */
+    private fun formatSeconds(sec: Float): String {
+        return if (sec % 1.0f == 0.0f) sec.toInt().toString() else sec.toString()
+    }
+
     private fun createAppRow(label: String, icon: Drawable, isSelected: Boolean, pkg: String): LinearLayout {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -331,9 +382,8 @@ class MainActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
 
-        // Поле задержки с автосохранением
         val delayInput = EditText(this).apply {
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            inputType = InputType.TYPE_CLASS_NUMBER
             val savedDelay = prefs.getLong("delay_$pkg", 15L)
             setText(savedDelay.toString())
             textSize = 14f
@@ -342,7 +392,6 @@ class MainActivity : AppCompatActivity() {
             setPadding(10, 10, 10, 10)
             setTextColor(colorGrayText)
 
-            // Автосохранение при каждом изменении текста
             addTextChangedListener(object : TextWatcher {
                 override fun afterTextChanged(s: Editable?) {
                     val delay = s?.toString()?.toLongOrNull()
@@ -356,7 +405,6 @@ class MainActivity : AppCompatActivity() {
         }
         row.addView(delayInput)
 
-        // Чекбокс «Фон»
         val bgCheck = CheckBox(this).apply {
             text = "Фон"
             textSize = 12f
@@ -372,7 +420,6 @@ class MainActivity : AppCompatActivity() {
         }
         row.addView(bgCheck)
 
-        // Клик по строке — выбор/снятие
         row.setOnClickListener {
             val currentSet = prefs.getStringSet("target_packages", emptySet())?.toMutableSet() ?: mutableSetOf()
             if (currentSet.contains(pkg)) {
@@ -382,7 +429,6 @@ class MainActivity : AppCompatActivity() {
                 currentSet.add(pkg)
                 Toast.makeText(this@MainActivity, "Выбрано: $label", Toast.LENGTH_SHORT).show()
             }
-            // Задержку не трогаем — она уже сохранена через TextWatcher
             prefs.edit().putStringSet("target_packages", currentSet).apply()
             recreate()
         }
