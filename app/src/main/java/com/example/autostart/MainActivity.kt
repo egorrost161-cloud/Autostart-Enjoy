@@ -18,7 +18,6 @@ import androidx.core.app.NotificationManagerCompat
 class MainActivity : AppCompatActivity() {
 
     private lateinit var prefs: SharedPreferences
-    private val REQUEST_NOTIF = 1001
     private var showingSetup = false
     private var lastPermissionState = ""
 
@@ -54,13 +53,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun permissionStateKey(): String {
-        return "${Settings.canDrawOverlays(this)}|${hasUsageStatsPermission()}|${isBatteryOptimized()}|${areNotificationsEnabled()}"
-    }
-
-    private fun isBatteryOptimized(): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return false
-        val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
-        return pm.isIgnoringBatteryOptimizations(packageName)
+        return "${Settings.canDrawOverlays(this)}|${hasUsageStatsPermission()}|${batteryGranted()}|${areNotificationsEnabled()}"
     }
 
     private fun areAllPermissionsGranted(): Boolean {
@@ -102,6 +95,26 @@ class MainActivity : AppCompatActivity() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true
         val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
         return pm.isIgnoringBatteryOptimizations(packageName)
+    }
+
+    /** Открывает системный экран уведомлений для нашего приложения. */
+    private fun openNotificationSettings() {
+        val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+        intent.putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        try {
+            startActivity(intent)
+        } catch (e: Exception) {
+            // Fallback для старых Android
+            try {
+                val fallback = Intent("android.settings.APP_NOTIFICATION_SETTINGS")
+                fallback.putExtra("app_package", packageName)
+                fallback.putExtra("app_uid", applicationInfo.uid)
+                startActivity(fallback)
+            } catch (e2: Exception) {
+                Toast.makeText(this@MainActivity, "Не удалось открыть настройки уведомлений", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     /** Универсальная кнопка разрешения: зелёная с ✓ если выдано, серая с ○ если нет. */
@@ -177,16 +190,11 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
-        // 4. Уведомления
+        // 4. Уведомления — открываем системные настройки уведомлений
         root.addView(permissionButton("Уведомления", areNotificationsEnabled()) {
             if (!areNotificationsEnabled()) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), REQUEST_NOTIF)
-                } else {
-                    val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                    intent.putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
-                    startActivity(intent)
-                }
+                openNotificationSettings()
+                Toast.makeText(this@MainActivity, "Включи уведомления для AutoStart Pro", Toast.LENGTH_LONG).show()
             } else {
                 Toast.makeText(this@MainActivity, "Уже выдано", Toast.LENGTH_SHORT).show()
             }
@@ -220,13 +228,6 @@ class MainActivity : AppCompatActivity() {
         })
 
         setContentView(root)
-    }
-
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQUEST_NOTIF) {
-            recreate()
-        }
     }
 
     private fun showMainScreen() {
@@ -281,12 +282,23 @@ class MainActivity : AppCompatActivity() {
         val apps = pm.getInstalledApplications(android.content.pm.PackageManager.GET_META_DATA)
         val savedPackages = prefs.getStringSet("target_packages", emptySet()) ?: emptySet()
 
-        val sortedApps = apps.sortedBy { pm.getApplicationLabel(it).toString().lowercase() }
+        // Собираем только запускаемые приложения (кроме себя)
+        val launchableApps = apps.filter { app ->
+            app.packageName != packageName &&
+            pm.getLaunchIntentForPackage(app.packageName) != null
+        }
+
+        // === ГЛАВНОЕ ИЗМЕНЕНИЕ: сортировка ===
+        // Сначала выбранные (по алфавиту), потом невыбранные (по алфавиту).
+        val sortedApps = launchableApps.sortedWith(
+            compareByDescending<android.content.pm.ApplicationInfo> {
+                savedPackages.contains(it.packageName)
+            }.thenBy {
+                pm.getApplicationLabel(it).toString().lowercase()
+            }
+        )
 
         for (app in sortedApps) {
-            if (app.packageName == packageName) continue
-            if (pm.getLaunchIntentForPackage(app.packageName) == null) continue
-
             val label = pm.getApplicationLabel(app).toString()
             val icon = pm.getApplicationIcon(app)
             val isSelected = savedPackages.contains(app.packageName)
@@ -317,7 +329,6 @@ class MainActivity : AppCompatActivity() {
         })
 
         row.addView(TextView(this).apply {
-            // Значок галочки перед названием, если выбрано
             text = if (isSelected) "✓  $label" else "○  $label"
             textSize = 16f
             setTextColor(if (isSelected) colorGreenText else colorGrayText)
