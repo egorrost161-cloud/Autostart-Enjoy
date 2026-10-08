@@ -18,6 +18,8 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var prefs: SharedPreferences
     private val REQUEST_NOTIF = 1001
+    private var showingSetup = false
+    private var lastPermissionState = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -25,10 +27,36 @@ class MainActivity : AppCompatActivity() {
         LogWriter.init(this)
 
         if (!areAllPermissionsGranted()) {
+            showingSetup = true
             showSetupScreen()
         } else {
+            showingSetup = false
             showMainScreen()
         }
+        lastPermissionState = permissionStateKey()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Если вернулись в приложение и экран настройки открыт —
+        // проверяем, изменились ли разрешения. Если да — перерисовываем.
+        if (showingSetup) {
+            val current = permissionStateKey()
+            if (current != lastPermissionState) {
+                lastPermissionState = current
+                recreate()
+            }
+        }
+    }
+
+    private fun permissionStateKey(): String {
+        return "${Settings.canDrawOverlays(this)}|${hasUsageStatsPermission()}|${isBatteryOptimized()}|${areNotificationsEnabled()}"
+    }
+
+    private fun isBatteryOptimized(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return false
+        val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+        return pm.isIgnoringBatteryOptimizations(packageName)
     }
 
     private fun areAllPermissionsGranted(): Boolean {
@@ -82,6 +110,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showSetupScreen() {
+        showingSetup = true
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(40, 60, 40, 40)
@@ -188,6 +217,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showMainScreen() {
+        showingSetup = false
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(40, 40, 40, 40)
