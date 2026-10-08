@@ -12,7 +12,6 @@ import androidx.core.app.NotificationCompat
 class KeepAliveService : Service() {
 
     private val handler = Handler(Looper.getMainLooper())
-    private var isStarted = false
 
     override fun onCreate() {
         super.onCreate()
@@ -26,25 +25,25 @@ class KeepAliveService : Service() {
         startForeground(101, notification)
 
         val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
-        val targetPackages = prefs.getStringSet("target_packages", emptySet()) ?: emptySet()
+        val targetSet = prefs.getStringSet("target_packages", emptySet()) ?: emptySet()
 
-        if (targetPackages.isEmpty()) {
+        if (targetSet.isEmpty()) {
             LogWriter.log("Пакеты не выбраны — выход")
             stopSelf()
             return START_NOT_STICKY
         }
 
-        if (isStarted) {
-            LogWriter.log("Сервис уже работает")
-            return START_STICKY
-        }
+        LogWriter.log("Сервис запущен, пакетов: ${targetSet.size}")
 
-        isStarted = true
-        LogWriter.log("Сервис запущен, пакетов: ${targetPackages.size}")
+        // Отменяем старые задачи, чтобы не было дублей
+        handler.removeCallbacksAndMessages(null)
 
-        for (pkg in targetPackages) {
-            val delaySec = prefs.getLong("delay_$pkg", 15L)
+        // Для каждого приложения планируем свой запуск
+        // через ЕГО СОБСТВЕННУЮ задержку ОТ МОМЕНТА СТАРТА СЕРВИСА.
+        for (pkg in targetSet) {
+            val delaySec = prefs.getLong("delay_$pkg", 15L).coerceAtLeast(1L)
             val delayMs = delaySec * 1000
+            LogWriter.log("Запланирован $pkg через ${delaySec}с от старта")
             handler.postDelayed({
                 launchApp(pkg, delaySec)
             }, delayMs)
@@ -59,7 +58,7 @@ class KeepAliveService : Service() {
             if (launchIntent != null) {
                 launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 startActivity(launchIntent)
-                LogWriter.log("+ Запущен $pkg через ${delaySec}с")
+                LogWriter.log("+ Запущен $pkg (задержка ${delaySec}с от старта)")
             } else {
                 LogWriter.log("- Не найдена точка входа для $pkg")
             }
@@ -72,7 +71,10 @@ class KeepAliveService : Service() {
         val openApp = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
         }
-        val pi = PendingIntent.getActivity(this, 0, openApp, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val pi = PendingIntent.getActivity(
+            this, 0, openApp,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
 
         return NotificationCompat.Builder(this, "autostart_channel")
             .setContentTitle("AutoStart Pro активен")
@@ -100,7 +102,6 @@ class KeepAliveService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         handler.removeCallbacksAndMessages(null)
-        isStarted = false
         LogWriter.log("=== Сервис остановлен ===")
     }
 
