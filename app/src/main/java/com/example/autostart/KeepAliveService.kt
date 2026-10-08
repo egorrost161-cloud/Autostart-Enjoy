@@ -3,6 +3,7 @@ package com.example.autostart
 import android.app.*
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -33,7 +34,6 @@ class KeepAliveService : Service() {
             return START_NOT_STICKY
         }
 
-        // Отменяем старые задачи, чтобы не было дублей
         handler.removeCallbacksAndMessages(null)
 
         val forceCheck = intent?.getBooleanExtra("FORCE_CHECK", false) ?: false
@@ -48,7 +48,7 @@ class KeepAliveService : Service() {
 
         LogWriter.log("Сервис запущен, пакетов: ${targetSet.size}")
         for (pkg in targetSet) {
-            val delaySec = prefs.getLong("delay_$pkg", 15L).coerceAtLeast(1L)
+            val delaySec = prefs.getLong("delay_$pkg", 15L).coerceAtLeast(0L)
             val delayMs = delaySec * 1000
             LogWriter.log("Запланирован $pkg через ${delaySec}с от старта")
             handler.postDelayed({
@@ -59,7 +59,7 @@ class KeepAliveService : Service() {
         return START_STICKY
     }
 
-    private fun launchApp(pkg: String, delaySec: Long, prefs: android.content.SharedPreferences) {
+    private fun launchApp(pkg: String, delaySec: Long, prefs: SharedPreferences) {
         try {
             val launchIntent = packageManager.getLaunchIntentForPackage(pkg)
             if (launchIntent != null) {
@@ -67,14 +67,17 @@ class KeepAliveService : Service() {
                 startActivity(launchIntent)
                 LogWriter.log("+ Запущен $pkg (задержка ${delaySec}с)")
 
-                // Проверяем, включён ли режим «Фон»
                 val bgMode = prefs.getBoolean("bg_$pkg", false)
                 if (bgMode) {
-                    // Через 1.5 секунды возвращаемся на домашний экран
+                    // Читаем паузу в СЕКУНДАХ, диапазон 0.5 – 10
+                    val goHomeSec = prefs.getFloat("bg_go_home_delay_sec", 1.5f)
+                        .coerceIn(0.5f, 10.0f)
+                    val goHomeMs = (goHomeSec * 1000).toLong()
+
                     handler.postDelayed({
                         goHome()
-                        LogWriter.log("~ $pkg свёрнут в фон")
-                    }, 1500L)
+                        LogWriter.log("~ $pkg свёрнут в фон (пауза ${goHomeSec}с)")
+                    }, goHomeMs)
                 }
             } else {
                 LogWriter.log("- Не найдена точка входа для $pkg")
@@ -84,7 +87,6 @@ class KeepAliveService : Service() {
         }
     }
 
-    /** Возвращает на домашний экран (эмулирует нажатие Home). */
     private fun goHome() {
         try {
             val home = Intent(Intent.ACTION_MAIN).apply {
