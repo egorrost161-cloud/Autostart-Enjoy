@@ -33,13 +33,22 @@ class KeepAliveService : Service() {
             return START_NOT_STICKY
         }
 
-        LogWriter.log("Сервис запущен, пакетов: ${targetSet.size}")
-
         // Отменяем старые задачи, чтобы не было дублей
         handler.removeCallbacksAndMessages(null)
 
-        // Для каждого приложения планируем свой запуск
-        // через ЕГО СОБСТВЕННУЮ задержку ОТ МОМЕНТА СТАРТА СЕРВИСА.
+        // Проверяем FORCE_CHECK — пришёл ли запрос на немедленный запуск
+        val forceCheck = intent?.getBooleanExtra("FORCE_CHECK", false) ?: false
+
+        if (forceCheck) {
+            LogWriter.log("FORCE_CHECK — немедленный запуск ${targetSet.size} приложений")
+            for (pkg in targetSet) {
+                launchApp(pkg, 0L)
+            }
+            return START_STICKY
+        }
+
+        // Обычный режим — планируем запуски по индивидуальным задержкам от старта
+        LogWriter.log("Сервис запущен, пакетов: ${targetSet.size}")
         for (pkg in targetSet) {
             val delaySec = prefs.getLong("delay_$pkg", 15L).coerceAtLeast(1L)
             val delayMs = delaySec * 1000
@@ -58,7 +67,7 @@ class KeepAliveService : Service() {
             if (launchIntent != null) {
                 launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 startActivity(launchIntent)
-                LogWriter.log("+ Запущен $pkg (задержка ${delaySec}с от старта)")
+                LogWriter.log("+ Запущен $pkg (задержка ${delaySec}с)")
             } else {
                 LogWriter.log("- Не найдена точка входа для $pkg")
             }
