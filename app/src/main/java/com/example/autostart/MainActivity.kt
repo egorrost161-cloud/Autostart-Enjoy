@@ -146,7 +146,7 @@ class MainActivity : AppCompatActivity() {
                     startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName")))
                 }
             } else {
-                Toast.makeText(this, "Уже выдано", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@MainActivity, "Уже выдано", Toast.LENGTH_SHORT).show()
             }
         })
 
@@ -154,9 +154,9 @@ class MainActivity : AppCompatActivity() {
         root.addView(permissionButton("Статистика использования", hasUsageStatsPermission()) {
             if (!hasUsageStatsPermission()) {
                 startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
-                Toast.makeText(this, "Найди AutoStart Pro и включи доступ", Toast.LENGTH_LONG).show()
+                Toast.makeText(this@MainActivity, "Найди AutoStart Pro и включи доступ", Toast.LENGTH_LONG).show()
             } else {
-                Toast.makeText(this, "Уже выдано", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@MainActivity, "Уже выдано", Toast.LENGTH_SHORT).show()
             }
         })
 
@@ -173,7 +173,7 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             } else {
-                Toast.makeText(this, "Уже выдано", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@MainActivity, "Уже выдано", Toast.LENGTH_SHORT).show()
             }
         })
 
@@ -188,7 +188,7 @@ class MainActivity : AppCompatActivity() {
                     startActivity(intent)
                 }
             } else {
-                Toast.makeText(this, "Уже выдано", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@MainActivity, "Уже выдано", Toast.LENGTH_SHORT).show()
             }
         })
 
@@ -213,7 +213,7 @@ class MainActivity : AppCompatActivity() {
                 if (areAllPermissionsGranted()) {
                     prefs.edit().putBoolean("setup_done", true).apply()
                 } else {
-                    Toast.makeText(this, "Не все разрешения выданы", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@MainActivity, "Не все разрешения выданы", Toast.LENGTH_SHORT).show()
                 }
                 recreate()
             }
@@ -340,10 +340,10 @@ class MainActivity : AppCompatActivity() {
             val currentSet = prefs.getStringSet("target_packages", emptySet())?.toMutableSet() ?: mutableSetOf()
             if (currentSet.contains(pkg)) {
                 currentSet.remove(pkg)
-                Toast.makeText(this, "Автозапуск отключён", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@MainActivity, "Автозапуск отключён", Toast.LENGTH_SHORT).show()
             } else {
                 currentSet.add(pkg)
-                Toast.makeText(this, "Выбрано: $label", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@MainActivity, "Выбрано: $label", Toast.LENGTH_SHORT).show()
             }
             val delay = delayInput.text.toString().toLongOrNull() ?: 15L
             prefs.edit()
