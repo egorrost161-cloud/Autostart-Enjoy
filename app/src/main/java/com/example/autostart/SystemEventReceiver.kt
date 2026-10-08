@@ -13,7 +13,8 @@ class SystemEventReceiver : BroadcastReceiver() {
         LogWriter.log("SystemEvent: $action")
 
         when (action) {
-            // Загрузка — обычный запуск с задержкой (не форсируем)
+
+            // === 1-3. Загрузка системы — обычный запуск с задержкой ===
             Intent.ACTION_BOOT_COMPLETED,
             "android.intent.action.QUICKBOOT_POWERON",
             "com.htc.intent.action.QUICKBOOT_POWERON" -> {
@@ -21,28 +22,50 @@ class SystemEventReceiver : BroadcastReceiver() {
                 startService(context, forceCheck = false)
             }
 
-            // Пробуждение экрана — форс-проверка
+            // === 4-5. Пробуждение экрана — форс-проверка ===
             Intent.ACTION_SCREEN_ON,
             Intent.ACTION_USER_PRESENT -> {
-                LogWriter.log("Экран включён — форс-проверка")
+                LogWriter.log("Экран включён / разблокирован — форс-проверка")
                 startService(context, forceCheck = true)
             }
 
-            // Зарядка подключена — форс-проверка
+            // === 6. Зарядка подключена — форс-проверка ===
             Intent.ACTION_POWER_CONNECTED -> {
                 LogWriter.log("Зарядка подключена — форс-проверка")
                 startService(context, forceCheck = true)
             }
 
-            // Сеть изменилась — форс-проверка
+            // === 7-9. Сеть изменилась — форс-проверка ===
             "android.net.wifi.STATE_CHANGE",
-            "android.net.conn.CONNECTIVITY_CHANGE" -> {
+            "android.net.conn.CONNECTIVITY_CHANGE",
+            "android.net.wifi.WIFI_STATE_CHANGED" -> {
                 LogWriter.log("Сеть изменилась — форс-проверка")
                 startService(context, forceCheck = true)
             }
 
-            else -> {
+            // === 10. Гарнитура подключена — форс-проверка ===
+            Intent.ACTION_HEADSET_PLUG -> {
+                LogWriter.log("Гарнитура подключена — форс-проверка")
+                startService(context, forceCheck = true)
+            }
+
+            // === 11. SD-карта смонтирована — форс-проверка ===
+            Intent.ACTION_MEDIA_MOUNTED -> {
+                LogWriter.log("SD-карта смонтирована — форс-проверка")
+                startService(context, forceCheck = true)
+            }
+
+            // === 12-13. Прочие события — только логируем ===
+            Intent.ACTION_SCREEN_OFF,
+            Intent.ACTION_POWER_DISCONNECTED,
+            Intent.ACTION_AIRPLANE_MODE_CHANGED,
+            Intent.ACTION_MEDIA_EJECT,
+            Intent.ACTION_MEDIA_REMOVED -> {
                 LogWriter.log("Прочее событие — игнорируем")
+            }
+
+            else -> {
+                LogWriter.log("Неизвестное событие — игнорируем")
             }
         }
     }
