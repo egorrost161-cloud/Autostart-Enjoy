@@ -16,6 +16,7 @@ import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
 import android.view.Gravity
+import android.view.View
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.NotificationManagerCompat
@@ -28,16 +29,18 @@ class MainActivity : AppCompatActivity() {
     private var lastPermissionState = ""
 
     // Цвета
-    private val colorBg = Color.parseColor("#F5F5F7")           // фон
-    private val colorCard = Color.WHITE                          // карточка
-    private val colorGreen = Color.parseColor("#4CAF50")         // зелёный
-    private val colorGreenDark = Color.parseColor("#388E3C")     // зелёный тёмный
-    private val colorRed = Color.parseColor("#E53935")           // красный
-    private val colorGray = Color.parseColor("#EEEEEE")          // серый
-    private val colorGrayDark = Color.parseColor("#757575")      // серый тёмный
-    private val colorText = Color.parseColor("#212121")          // основной текст
-    private val colorTextLight = Color.parseColor("#616161")     // второстепенный текст
-    private val colorBorder = Color.parseColor("#E0E0E0")        // границы
+    private val colorBg = Color.parseColor("#F5F5F7")
+    private val colorCard = Color.WHITE
+    private val colorGreen = Color.parseColor("#4CAF50")
+    private val colorRed = Color.parseColor("#E53935")
+    private val colorGray = Color.parseColor("#EEEEEE")
+    private val colorGrayDark = Color.parseColor("#BDBDBD")
+    private val colorText = Color.parseColor("#212121")
+    private val colorTextLight = Color.parseColor("#616161")
+    private val colorBorder = Color.parseColor("#E0E0E0")
+
+    // Для восстановления позиции скролла
+    private var savedScrollY: Int = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -67,7 +70,6 @@ class MainActivity : AppCompatActivity() {
 
     // ============ УТИЛИТЫ UI ============
 
-    /** Создаёт фон с закруглёнными углами. */
     private fun roundedBg(color: Int, radiusPx: Int = 24): GradientDrawable {
         return GradientDrawable().apply {
             setColor(color)
@@ -75,7 +77,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Создаёт фон с закруглёнными углами и рамкой. */
     private fun roundedBgWithBorder(fill: Int, border: Int, radiusPx: Int = 24): GradientDrawable {
         return GradientDrawable().apply {
             setColor(fill)
@@ -84,7 +85,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Создаёт карточку-контейнер. */
     private fun card(): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -97,7 +97,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Создаёт заголовок секции. */
     private fun sectionTitle(text: String): TextView {
         return TextView(this).apply {
             this.text = text
@@ -108,7 +107,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Создаёт подпись. */
     private fun label(text: String): TextView {
         return TextView(this).apply {
             this.text = text
@@ -118,7 +116,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Создаёт подпись-подсказку. */
     private fun hint(text: String): TextView {
         return TextView(this).apply {
             this.text = text
@@ -128,7 +125,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Создаёт поле ввода. */
     private fun inputField(hintText: String): EditText {
         return EditText(this).apply {
             hint = hintText
@@ -139,7 +135,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Создаёт кнопку с закруглёнными углами. */
     private fun roundedButton(text: String, bgColor: Int, textColor: Int, onClick: () -> Unit): Button {
         return Button(this).apply {
             this.text = text
@@ -246,7 +241,6 @@ class MainActivity : AppCompatActivity() {
             setBackgroundColor(colorBg)
         }
 
-        // Заголовок
         root.addView(TextView(this).apply {
             text = "AutoStart Pro"
             textSize = 28f
@@ -263,7 +257,6 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, 10, 0, 30)
         })
 
-        // Карточка с разрешениями
         val permsCard = card()
         permsCard.addView(permissionButton("Наложение поверх окон", overlayGranted()) {
             if (!overlayGranted()) {
@@ -307,7 +300,6 @@ class MainActivity : AppCompatActivity() {
         })
         root.addView(permsCard)
 
-        // Кнопки
         root.addView(roundedButton("ОБНОВИТЬ СТАТУС", colorGray, colorText) { recreate() })
         root.addView(roundedButton("ПРОДОЛЖИТЬ", colorGreen, Color.WHITE) {
             if (areAllPermissionsGranted()) {
@@ -334,7 +326,6 @@ class MainActivity : AppCompatActivity() {
             setBackgroundColor(colorBg)
         }
 
-        // Заголовок
         root.addView(TextView(this).apply {
             text = "AutoStart Pro"
             textSize = 26f
@@ -379,166 +370,187 @@ class MainActivity : AppCompatActivity() {
         autoplayCard.addView(hint("Пробует отправить команду Play через 3 и 6 секунд после запуска"))
         root.addView(autoplayCard)
 
-        // ============ КАРТОЧКА: МОНИТОР ============
-        val monitorOn = prefs.getBoolean("monitor_enabled", false)
+        // ============ КАРТОЧКА: МОНИТОР (СО СПОЙЛЕРОМ) ============
         val monitorCard = card()
 
-        monitorCard.addView(TextView(this).apply {
+        // Спойлер-заголовок
+        val monitorOpen = prefs.getBoolean("monitor_spoiler_open", false)
+        val spoilerHeader = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, 0)
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                val newState = !prefs.getBoolean("monitor_spoiler_open", false)
+                prefs.edit().putBoolean("monitor_spoiler_open", newState).apply()
+                recreate()
+            }
+        }
+        spoilerHeader.addView(TextView(this).apply {
             text = "Монитор лаунчера"
             textSize = 16f
             setTextColor(colorText)
-            setPadding(0, 0, 0, 10)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
+        spoilerHeader.addView(TextView(this).apply {
+            text = if (monitorOpen) "▲" else "▼"
+            textSize = 14f
+            setTextColor(colorTextLight)
+        })
+        monitorCard.addView(spoilerHeader)
 
-        val monitorEnabledCheck = CheckBox(this).apply {
-            text = "Включить монитор"
-            textSize = 15f
-            setTextColor(colorText)
-            isChecked = monitorOn
-            setOnCheckedChangeListener { _, checked ->
-                prefs.edit().putBoolean("monitor_enabled", checked).apply()
-                recreate()
-            }
-        }
-        monitorCard.addView(monitorEnabledCheck)
+        if (monitorOpen) {
+            // Содержимое монитора
+            val monitorOn = prefs.getBoolean("monitor_enabled", false)
 
-        // Карточка-кнопка выбора пакета монитора
-        val packageCard = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(24, 24, 24, 24)
-            background = roundedBgWithBorder(colorBg, colorBorder, 20)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(0, 12, 0, 12) }
-        }
-
-        val savedMonitorPkg = prefs.getString("monitor_package", "") ?: ""
-        if (savedMonitorPkg.isNotEmpty()) {
-            val exists = try {
-                packageManager.getApplicationInfo(savedMonitorPkg, 0)
-                true
-            } catch (e: Exception) {
-                false
-            }
-
-            if (exists) {
-                val appInfo = packageManager.getApplicationInfo(savedMonitorPkg, 0)
-                val label = packageManager.getApplicationLabel(appInfo).toString()
-                val icon = packageManager.getApplicationIcon(appInfo)
-
-                packageCard.addView(ImageView(this).apply {
-                    setImageDrawable(icon)
-                    layoutParams = LinearLayout.LayoutParams(80, 80).apply { setMargins(0, 0, 20, 0) }
-                })
-
-                val textCol = LinearLayout(this).apply {
-                    orientation = LinearLayout.VERTICAL
-                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            val monitorEnabledCheck = CheckBox(this).apply {
+                text = "Включить монитор"
+                textSize = 15f
+                setTextColor(colorText)
+                isChecked = monitorOn
+                setPadding(0, 20, 0, 0)
+                setOnCheckedChangeListener { _, checked ->
+                    prefs.edit().putBoolean("monitor_enabled", checked).apply()
+                    recreate()
                 }
-                textCol.addView(TextView(this).apply {
-                    text = label
-                    textSize = 16f
-                    setTextColor(colorText)
-                })
-                textCol.addView(TextView(this).apply {
-                    text = savedMonitorPkg
-                    textSize = 11f
-                    setTextColor(colorTextLight)
-                })
-                packageCard.addView(textCol)
+            }
+            monitorCard.addView(monitorEnabledCheck)
 
-                val clearBtn = TextView(this).apply {
-                    text = "✕"
-                    textSize = 26f
-                    setTextColor(colorRed)
-                    gravity = Gravity.CENTER
-                    setPadding(20, 10, 20, 10)
-                    setOnClickListener {
-                        prefs.edit().remove("monitor_package").apply()
-                        Toast.makeText(this@MainActivity, "Пакет монитора очищен", Toast.LENGTH_SHORT).show()
-                        recreate()
+            // Карточка-кнопка выбора пакета
+            val packageCard = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(24, 24, 24, 24)
+                background = roundedBgWithBorder(colorBg, colorBorder, 20)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { setMargins(0, 12, 0, 12) }
+            }
+
+            val savedMonitorPkg = prefs.getString("monitor_package", "") ?: ""
+            if (savedMonitorPkg.isNotEmpty()) {
+                val exists = try {
+                    packageManager.getApplicationInfo(savedMonitorPkg, 0)
+                    true
+                } catch (e: Exception) { false }
+
+                if (exists) {
+                    val appInfo = packageManager.getApplicationInfo(savedMonitorPkg, 0)
+                    val label = packageManager.getApplicationLabel(appInfo).toString()
+                    val icon = packageManager.getApplicationIcon(appInfo)
+
+                    packageCard.addView(ImageView(this).apply {
+                        setImageDrawable(icon)
+                        layoutParams = LinearLayout.LayoutParams(80, 80).apply { setMargins(0, 0, 20, 0) }
+                    })
+
+                    val textCol = LinearLayout(this).apply {
+                        orientation = LinearLayout.VERTICAL
+                        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                     }
-                }
-                packageCard.addView(clearBtn)
+                    textCol.addView(TextView(this).apply {
+                        text = label
+                        textSize = 16f
+                        setTextColor(colorText)
+                    })
+                    textCol.addView(TextView(this).apply {
+                        text = savedMonitorPkg
+                        textSize = 11f
+                        setTextColor(colorTextLight)
+                    })
+                    packageCard.addView(textCol)
 
+                    val clearBtn = TextView(this).apply {
+                        text = "✕"
+                        textSize = 26f
+                        setTextColor(colorRed)
+                        gravity = Gravity.CENTER
+                        setPadding(20, 10, 20, 10)
+                        setOnClickListener {
+                            prefs.edit().remove("monitor_package").apply()
+                            Toast.makeText(this@MainActivity, "Пакет монитора очищен", Toast.LENGTH_SHORT).show()
+                            recreate()
+                        }
+                    }
+                    packageCard.addView(clearBtn)
+                } else {
+                    packageCard.addView(TextView(this).apply {
+                        text = "⚠  Приложение удалено — нажми, чтобы выбрать заново"
+                        textSize = 14f
+                        setTextColor(colorRed)
+                        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    })
+                    val clearBtn = TextView(this).apply {
+                        text = "✕"
+                        textSize = 26f
+                        setTextColor(colorRed)
+                        gravity = Gravity.CENTER
+                        setPadding(20, 10, 20, 10)
+                        setOnClickListener {
+                            prefs.edit().remove("monitor_package").apply()
+                            recreate()
+                        }
+                    }
+                    packageCard.addView(clearBtn)
+                }
             } else {
                 packageCard.addView(TextView(this).apply {
-                    text = "⚠  Приложение удалено — нажми, чтобы выбрать заново"
+                    text = "Не выбрано — нажми, чтобы выбрать приложение"
                     textSize = 14f
-                    setTextColor(colorRed)
+                    setTextColor(colorTextLight)
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 })
+            }
 
-                val clearBtn = TextView(this).apply {
-                    text = "✕"
-                    textSize = 26f
-                    setTextColor(colorRed)
-                    gravity = Gravity.CENTER
-                    setPadding(20, 10, 20, 10)
-                    setOnClickListener {
-                        prefs.edit().remove("monitor_package").apply()
-                        recreate()
+            packageCard.isClickable = true
+            packageCard.isFocusable = true
+            packageCard.setOnClickListener {
+                showPackagePickerDialog { pkg ->
+                    prefs.edit().putString("monitor_package", pkg).apply()
+                    recreate()
+                }
+            }
+            monitorCard.addView(packageCard)
+
+            monitorCard.addView(label("Интервал проверки (сек)"))
+            val intervalInput = inputField("30").apply {
+                inputType = InputType.TYPE_CLASS_NUMBER
+                setText(prefs.getLong("monitor_interval_sec", 30L).toString())
+                isEnabled = monitorOn
+                addTextChangedListener(object : TextWatcher {
+                    override fun afterTextChanged(s: Editable?) {
+                        val v = s?.toString()?.toLongOrNull() ?: return
+                        if (v in 5L..300L) prefs.edit().putLong("monitor_interval_sec", v).apply()
                     }
-                }
-                packageCard.addView(clearBtn)
+                    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                })
             }
-        } else {
-            packageCard.addView(TextView(this).apply {
-                text = "Не выбрано — нажми, чтобы выбрать приложение"
-                textSize = 14f
-                setTextColor(colorTextLight)
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            })
-        }
+            monitorCard.addView(intervalInput)
+            monitorCard.addView(hint("5 – 300 сек"))
 
-        packageCard.isClickable = true
-        packageCard.isFocusable = true
-        packageCard.setOnClickListener {
-            showPackagePickerDialog { pkg ->
-                prefs.edit().putString("monitor_package", pkg).apply()
-                recreate()
+            monitorCard.addView(label("Неактивность порог (мин)"))
+            val idleInput = inputField("30").apply {
+                inputType = InputType.TYPE_CLASS_NUMBER
+                setText(prefs.getLong("monitor_idle_minutes", 30L).toString())
+                isEnabled = monitorOn
+                addTextChangedListener(object : TextWatcher {
+                    override fun afterTextChanged(s: Editable?) {
+                        val v = s?.toString()?.toLongOrNull() ?: return
+                        if (v in 1L..240L) prefs.edit().putLong("monitor_idle_minutes", v).apply()
+                    }
+                    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                })
             }
+            monitorCard.addView(idleInput)
+            monitorCard.addView(hint("1 – 240 мин. Монитор вернёт лаунчер, если он неактивен N минут"))
         }
-        monitorCard.addView(packageCard)
-
-        monitorCard.addView(label("Интервал проверки (сек)"))
-        val intervalInput = inputField("30").apply {
-            inputType = InputType.TYPE_CLASS_NUMBER
-            setText(prefs.getLong("monitor_interval_sec", 30L).toString())
-            isEnabled = monitorOn
-            addTextChangedListener(object : TextWatcher {
-                override fun afterTextChanged(s: Editable?) {
-                    val v = s?.toString()?.toLongOrNull() ?: return
-                    if (v in 5L..300L) prefs.edit().putLong("monitor_interval_sec", v).apply()
-                }
-                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-            })
-        }
-        monitorCard.addView(intervalInput)
-        monitorCard.addView(hint("5 – 300 сек"))
-
-        monitorCard.addView(label("Неактивность порог (мин)"))
-        val idleInput = inputField("30").apply {
-            inputType = InputType.TYPE_CLASS_NUMBER
-            setText(prefs.getLong("monitor_idle_minutes", 30L).toString())
-            isEnabled = monitorOn
-            addTextChangedListener(object : TextWatcher {
-                override fun afterTextChanged(s: Editable?) {
-                    val v = s?.toString()?.toLongOrNull() ?: return
-                    if (v in 1L..240L) prefs.edit().putLong("monitor_idle_minutes", v).apply()
-                }
-                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-            })
-        }
-        monitorCard.addView(idleInput)
-        monitorCard.addView(hint("1 – 240 мин. Монитор вернёт лаунчер, если он неактивен N минут"))
         root.addView(monitorCard)
 
-        // ============ КНОПКИ УПРАВЛЕНИЯ ============
+        // ============ КНОПКИ ============
         root.addView(roundedButton("ЗАПУСТИТЬ СЕРВИС СЕЙЧАС", colorGreen, Color.WHITE) {
             val intent = Intent(this@MainActivity, KeepAliveService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -567,7 +579,18 @@ class MainActivity : AppCompatActivity() {
         })
 
         // ============ СПИСОК ПРИЛОЖЕНИЙ ============
-        root.addView(sectionTitle("ВЫБЕРИТЕ ПРИЛОЖЕНИЯ"))
+        // Якорь для прокрутки к списку
+        val listAnchorId = View.generateViewId()
+        val listTitle = TextView(this).apply {
+            id = listAnchorId
+            text = "ВЫБЕРИТЕ ПРИЛОЖЕНИЯ"
+            textSize = 13f
+            setTextColor(colorTextLight)
+            letterSpacing = 0.1f
+            setPadding(10, 30, 10, 10)
+        }
+        root.addView(listTitle)
+
         root.addView(TextView(this).apply {
             text = "Тап по строке — выбор. Фон — свернуть после запуска."
             textSize = 12f
@@ -599,10 +622,29 @@ class MainActivity : AppCompatActivity() {
             root.addView(createAppRow(label, icon, isSelected, app.packageName))
         }
 
-        setContentView(ScrollView(this).apply {
+        // Оборачиваем в ScrollView и восстанавливаем позицию скролла
+        val scrollView = ScrollView(this).apply {
             setBackgroundColor(colorBg)
             addView(root)
-        })
+        }
+        setContentView(scrollView)
+
+        // Восстанавливаем позицию скролла и/или прокручиваем к списку
+        scrollView.post {
+            val scrollToList = intent.getBooleanExtra("SCROLL_TO_LIST", false)
+            val scrollToListIndex = intent.getIntExtra("SCROLL_TO_LIST_INDEX", -1)
+
+            if (scrollToList && scrollToListIndex >= 0) {
+                // Ищем View строки, которую только что нажали, и скроллим к ней
+                // Проще: скроллим так, чтобы строка оказалась на видном месте
+                val listTitleView = scrollView.findViewById<View>(listAnchorId)
+                if (listTitleView != null) {
+                    scrollView.smoothScrollTo(0, listTitleView.top)
+                }
+            } else if (savedScrollY > 0) {
+                scrollView.scrollTo(0, savedScrollY)
+            }
+        }
     }
 
     // ============ ДИАЛОГИ ============
@@ -741,7 +783,16 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this@MainActivity, "Выбрано: $label", Toast.LENGTH_SHORT).show()
             }
             prefs.edit().putStringSet("target_packages", currentSet).apply()
-            recreate()
+
+            // Вместо recreate() с полным сбросом скролла — recreate() с сохранением
+            // позиции через флаг SCROLL_TO_LIST, чтобы вернуться к списку приложений
+            val intent = Intent(this@MainActivity, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                putExtra("SCROLL_TO_LIST", true)
+                putExtra("SCROLL_TO_LIST_INDEX", 0)
+            }
+            startActivity(intent)
+            finish()
         }
 
         return row
