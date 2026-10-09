@@ -31,6 +31,12 @@ class MainActivity : AppCompatActivity() {
     private val colorGrayText = Color.parseColor("#222222")
     private val colorRed = Color.parseColor("#D32F2F")
 
+    // Список пакетов, для которых показываем чекбокс «Автоплей»
+    private val autoplayPackages = setOf(
+        "ru.yandex.music",
+        "ru.auto.music"
+    )
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
@@ -316,13 +322,11 @@ class MainActivity : AppCompatActivity() {
                 val label = packageManager.getApplicationLabel(appInfo).toString()
                 val icon = packageManager.getApplicationIcon(appInfo)
 
-                // Иконка приложения
                 packageCard.addView(ImageView(this).apply {
                     setImageDrawable(icon)
                     layoutParams = LinearLayout.LayoutParams(80, 80).apply { setMargins(0, 0, 20, 0) }
                 })
 
-                // Название + пакет (занимают всё свободное место)
                 val textCol = LinearLayout(this).apply {
                     orientation = LinearLayout.VERTICAL
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -339,7 +343,6 @@ class MainActivity : AppCompatActivity() {
                 })
                 packageCard.addView(textCol)
 
-                // Кнопка «×» — убрать выбранное приложение
                 val clearBtn = TextView(this).apply {
                     text = "✕"
                     textSize = 26f
@@ -349,14 +352,12 @@ class MainActivity : AppCompatActivity() {
                     isClickable = true
                     isFocusable = true
                     setOnClickListener {
-                        // Сбрасываем выбранный пакет
                         prefs.edit().remove("monitor_package").apply()
                         Toast.makeText(this@MainActivity, "Пакет монитора очищен", Toast.LENGTH_SHORT).show()
                         recreate()
                     }
                 }
                 packageCard.addView(clearBtn)
-
             } else {
                 packageCard.addView(TextView(this).apply {
                     text = "⚠  Приложение удалено — нажми, чтобы выбрать заново"
@@ -364,7 +365,6 @@ class MainActivity : AppCompatActivity() {
                     setTextColor(Color.RED)
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 })
-
                 val clearBtn = TextView(this).apply {
                     text = "✕"
                     textSize = 26f
@@ -397,7 +397,6 @@ class MainActivity : AppCompatActivity() {
         }
         root.addView(packageCard)
 
-        // Интервал проверки
         root.addView(TextView(this).apply {
             text = "Интервал проверки (сек), 5–300:"
             textSize = 13f
@@ -421,7 +420,6 @@ class MainActivity : AppCompatActivity() {
         }
         root.addView(intervalInput)
 
-        // Порог неактивности
         root.addView(TextView(this).apply {
             text = "Неактивность порог (мин), 1–240:"
             textSize = 13f
@@ -490,7 +488,7 @@ class MainActivity : AppCompatActivity() {
         })
 
         root.addView(TextView(this).apply {
-            text = "Тап по строке — выбор. Фон — свернуть после запуска."
+            text = "Тап по строке — выбор. Фон — свернуть после запуска. Автоплей — для Яндекс.Музыки."
             textSize = 12f
             setPadding(0, 0, 0, 10)
         })
@@ -567,12 +565,18 @@ class MainActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(100, 100).apply { setMargins(0, 0, 20, 0) }
         })
 
-        row.addView(TextView(this).apply {
+        // Название + (для автоплей-пакетов) метка "плей"
+        val labelCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        labelCol.addView(TextView(this).apply {
             text = if (isSelected) "✓  $label" else "○  $label"
             textSize = 16f
             setTextColor(if (isSelected) colorGreenText else colorGrayText)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
+
+        row.addView(labelCol)
 
         val delayInput = EditText(this).apply {
             inputType = InputType.TYPE_CLASS_NUMBER
@@ -609,6 +613,24 @@ class MainActivity : AppCompatActivity() {
             ).apply { setMargins(8, 0, 0, 0) }
         }
         row.addView(bgCheck)
+
+        // Чекбокс «Автоплей» — только для поддерживаемых пакетов
+        if (autoplayPackages.contains(pkg)) {
+            val autoplayCheck = CheckBox(this).apply {
+                text = "▶"
+                textSize = 14f
+                setTextColor(if (isSelected) colorGreenText else colorGrayText)
+                isChecked = prefs.getBoolean("autoplay_$pkg", false)
+                setOnCheckedChangeListener { _, checked ->
+                    prefs.edit().putBoolean("autoplay_$pkg", checked).apply()
+                }
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { setMargins(8, 0, 0, 0) }
+            }
+            row.addView(autoplayCheck)
+        }
 
         row.setOnClickListener {
             val currentSet = prefs.getStringSet("target_packages", emptySet())?.toMutableSet() ?: mutableSetOf()
