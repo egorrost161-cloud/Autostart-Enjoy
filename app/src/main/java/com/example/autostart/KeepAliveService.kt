@@ -59,11 +59,8 @@ class KeepAliveService : Service() {
         }
 
         startMonitor(prefs)
-
         return START_STICKY
     }
-
-    // ============ АВТОЗАПУСК С АВТОПЛЕЕМ ============
 
     private fun launchApp(pkg: String, delaySec: Long, prefs: SharedPreferences) {
         try {
@@ -78,10 +75,15 @@ class KeepAliveService : Service() {
                     val autoplayEnabled = prefs.getBoolean("autoplay_yandex", false)
                     LogWriter.log("Яндекс.Музыка: автоплей=$autoplayEnabled")
                     if (autoplayEnabled) {
+                        // Первая попытка через 3 секунды
                         handler.postDelayed({
-                            sendPlayCommand()
+                            tryAllAutoplayMethods()
                         }, 3000L)
-                        LogWriter.log("~ Яндекс.Музыка: запланирован автоплей через 3с")
+                        // Повторная попытка через 6 секунд
+                        handler.postDelayed({
+                            LogWriter.log("=== Повторная попытка автоплея ===")
+                            tryAllAutoplayMethods()
+                        }, 6000L)
                     }
                 }
                 // =================================================
@@ -104,8 +106,53 @@ class KeepAliveService : Service() {
         }
     }
 
-    /** Эмулирует нажатие медиа-кнопки "Play/Pause" через AudioManager. */
-    private fun sendPlayCommand() {
+    // ============ АВТОПЛЕЙ: 3 СПОСОБА ============
+
+    private fun tryAllAutoplayMethods() {
+        LogWriter.log("--- Автоплей: пробуем все 3 способа ---")
+        method1Keyevent()
+        // Между способами — небольшая пауза
+        handler.postDelayed({ method2Broadcast() }, 500L)
+        handler.postDelayed({ method3MediaKey() }, 1000L)
+    }
+
+    /** Способ 1: shell-команда input keyevent 85 (KEYCODE_MEDIA_PLAY_PAUSE) */
+    private fun method1Keyevent() {
+        try {
+            Runtime.getRuntime().exec(arrayOf("input", "keyevent", "85"))
+            LogWriter.log("  [1] input keyevent 85 — отправлено")
+        } catch (e: Exception) {
+            LogWriter.log("  [1] input keyevent — ошибка: ${e.message}")
+        }
+    }
+
+    /** Способ 2: broadcast в Яндекс.Музыку с командой PLAY */
+    private fun method2Broadcast() {
+        try {
+            val intent = Intent("com.yandex.music.action.PLAY")
+            intent.setPackage("ru.yandex.music")
+            sendBroadcast(intent)
+            LogWriter.log("  [2] broadcast com.yandex.music.action.PLAY — отправлено")
+        } catch (e: Exception) {
+            LogWriter.log("  [2] broadcast — ошибка: ${e.message}")
+        }
+
+        // Дополнительно — стандартный MEDIA_BUTTON broadcast
+        try {
+            val intent = Intent(Intent.ACTION_MEDIA_BUTTON)
+            intent.putExtra(
+                Intent.EXTRA_KEY_EVENT,
+                KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY)
+            )
+            sendBroadcast(intent)
+            LogWriter.log("  [2b] ACTION_MEDIA_BUTTON broadcast — отправлено")
+        } catch (e: Exception) {
+            LogWriter.log("  [2b] MEDIA_BUTTON — ошибка: ${e.message}")
+        }
+    }
+
+    /** Способ 3: AudioManager.dispatchMediaKeyEvent */
+    private fun method3MediaKey() {
         try {
             val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
             val eventTime = android.os.SystemClock.uptimeMillis()
@@ -113,24 +160,22 @@ class KeepAliveService : Service() {
             val downEvent = KeyEvent(
                 eventTime, eventTime,
                 KeyEvent.ACTION_DOWN,
-                KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, 0
+                KeyEvent.KEYCODE_MEDIA_PLAY, 0
             )
             val upEvent = KeyEvent(
                 eventTime, eventTime,
                 KeyEvent.ACTION_UP,
-                KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, 0
+                KeyEvent.KEYCODE_MEDIA_PLAY, 0
             )
 
             audioManager.dispatchMediaKeyEvent(downEvent)
             audioManager.dispatchMediaKeyEvent(upEvent)
-
-            LogWriter.log("+ Отправлена команда Play (эмуляция медиа-кнопки)")
+            LogWriter.log("  [3] dispatchMediaKeyEvent PLAY — отправлено")
         } catch (e: Exception) {
-            LogWriter.log("- Ошибка отправки Play: ${e.message}")
+            LogWriter.log("  [3] dispatchMediaKeyEvent — ошибка: ${e.message}")
         }
     }
 
-    /** Возвращает на домашний экран (эмулирует нажатие Home). */
     private fun goHome() {
         try {
             val home = Intent(Intent.ACTION_MAIN).apply {
