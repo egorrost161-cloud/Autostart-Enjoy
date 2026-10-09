@@ -18,6 +18,7 @@ import android.view.Gravity
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.NotificationManagerCompat
+import java.io.File
 
 class MainActivity : AppCompatActivity() {
 
@@ -30,12 +31,6 @@ class MainActivity : AppCompatActivity() {
     private val colorGreenText = Color.WHITE
     private val colorGrayText = Color.parseColor("#222222")
     private val colorRed = Color.parseColor("#D32F2F")
-
-    // Список пакетов, для которых показываем чекбокс «Автоплей»
-    private val autoplayPackages = setOf(
-        "ru.yandex.music",
-        "ru.auto.music"
-    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -275,6 +270,23 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, 0, 0, 20)
         })
 
+        // === Галочка автоплея Яндекс.Музыки ===
+        val autoplayCheck = CheckBox(this).apply {
+            text = "Автоплей Яндекс.Музыки"
+            textSize = 14f
+            isChecked = prefs.getBoolean("autoplay_yandex", false)
+            setOnCheckedChangeListener { _, checked ->
+                prefs.edit().putBoolean("autoplay_yandex", checked).apply()
+            }
+        }
+        root.addView(autoplayCheck)
+
+        root.addView(TextView(this).apply {
+            text = "Пробует отправить команду Play через 3 и 6 секунд после запуска."
+            textSize = 11f
+            setPadding(0, 0, 0, 20)
+        })
+
         // ============ БЛОК МОНИТОРА ============
         root.addView(TextView(this).apply {
             text = "─── МОНИТОР ЛАУНЧЕРА ───"
@@ -296,7 +308,6 @@ class MainActivity : AppCompatActivity() {
         }
         root.addView(monitorEnabledCheck)
 
-        // Карточка выбора пакета монитора
         val packageCard = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -349,8 +360,6 @@ class MainActivity : AppCompatActivity() {
                     setTextColor(colorRed)
                     gravity = Gravity.CENTER
                     setPadding(20, 10, 20, 10)
-                    isClickable = true
-                    isFocusable = true
                     setOnClickListener {
                         prefs.edit().remove("monitor_package").apply()
                         Toast.makeText(this@MainActivity, "Пакет монитора очищен", Toast.LENGTH_SHORT).show()
@@ -358,6 +367,7 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
                 packageCard.addView(clearBtn)
+
             } else {
                 packageCard.addView(TextView(this).apply {
                     text = "⚠  Приложение удалено — нажми, чтобы выбрать заново"
@@ -365,6 +375,7 @@ class MainActivity : AppCompatActivity() {
                     setTextColor(Color.RED)
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 })
+
                 val clearBtn = TextView(this).apply {
                     text = "✕"
                     textSize = 26f
@@ -481,6 +492,35 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
+        // ============ КНОПКА ПОКАЗАТЬ ЛОГ ============
+        root.addView(Button(this).apply {
+            text = "Показать лог"
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 6, 0, 6) }
+            setOnClickListener {
+                showLogDialog()
+            }
+        })
+
+        root.addView(Button(this).apply {
+            text = "Очистить лог"
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 6, 0, 6) }
+            setOnClickListener {
+                try {
+                    val file = File(filesDir, "autostart_log.txt")
+                    if (file.exists()) file.delete()
+                    Toast.makeText(this@MainActivity, "Лог очищен", Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    Toast.makeText(this@MainActivity, "Ошибка: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        })
+
         root.addView(TextView(this).apply {
             text = "ВЫБЕРИТЕ ПРИЛОЖЕНИЯ"
             textSize = 16f
@@ -488,7 +528,7 @@ class MainActivity : AppCompatActivity() {
         })
 
         root.addView(TextView(this).apply {
-            text = "Тап по строке — выбор. Фон — свернуть после запуска. Автоплей — для Яндекс.Музыки."
+            text = "Тап по строке — выбор. Фон — свернуть после запуска."
             textSize = 12f
             setPadding(0, 0, 0, 10)
         })
@@ -518,6 +558,35 @@ class MainActivity : AppCompatActivity() {
         }
 
         setContentView(ScrollView(this).apply { addView(root) })
+    }
+
+    private fun showLogDialog() {
+        try {
+            val file = File(filesDir, "autostart_log.txt")
+            val text = if (file.exists()) file.readText() else "Лог пуст — событий ещё не было."
+
+            // Скроллируемый TextView внутри диалога
+            val scroll = ScrollView(this)
+            val textView = TextView(this).apply {
+                this.text = text
+                textSize = 11f
+                setPadding(20, 20, 20, 20)
+                setTextIsSelectable(true)
+            }
+            scroll.addView(textView)
+
+            AlertDialog.Builder(this)
+                .setTitle("Лог AutoStart Pro")
+                .setView(scroll)
+                .setPositiveButton("Закрыть", null)
+                .setNeutralButton("Очистить") { _, _ ->
+                    file.delete()
+                    Toast.makeText(this@MainActivity, "Лог очищен", Toast.LENGTH_SHORT).show()
+                }
+                .show()
+        } catch (e: Exception) {
+            Toast.makeText(this@MainActivity, "Ошибка чтения лога: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun showPackagePickerDialog(onPicked: (String) -> Unit) {
@@ -565,18 +634,12 @@ class MainActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(100, 100).apply { setMargins(0, 0, 20, 0) }
         })
 
-        // Название + (для автоплей-пакетов) метка "плей"
-        val labelCol = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        labelCol.addView(TextView(this).apply {
+        row.addView(TextView(this).apply {
             text = if (isSelected) "✓  $label" else "○  $label"
             textSize = 16f
             setTextColor(if (isSelected) colorGreenText else colorGrayText)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
-
-        row.addView(labelCol)
 
         val delayInput = EditText(this).apply {
             inputType = InputType.TYPE_CLASS_NUMBER
@@ -613,24 +676,6 @@ class MainActivity : AppCompatActivity() {
             ).apply { setMargins(8, 0, 0, 0) }
         }
         row.addView(bgCheck)
-
-        // Чекбокс «Автоплей» — только для поддерживаемых пакетов
-        if (autoplayPackages.contains(pkg)) {
-            val autoplayCheck = CheckBox(this).apply {
-                text = "▶"
-                textSize = 14f
-                setTextColor(if (isSelected) colorGreenText else colorGrayText)
-                isChecked = prefs.getBoolean("autoplay_$pkg", false)
-                setOnCheckedChangeListener { _, checked ->
-                    prefs.edit().putBoolean("autoplay_$pkg", checked).apply()
-                }
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { setMargins(8, 0, 0, 0) }
-            }
-            row.addView(autoplayCheck)
-        }
 
         row.setOnClickListener {
             val currentSet = prefs.getStringSet("target_packages", emptySet())?.toMutableSet() ?: mutableSetOf()
