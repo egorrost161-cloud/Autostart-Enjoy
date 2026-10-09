@@ -38,6 +38,7 @@ class KeepAliveService : Service() {
             return START_STICKY
         }
 
+        // Обычный режим: автозапуск всех приложений + старт монитора
         val targetSet = prefs.getStringSet("target_packages", emptySet()) ?: emptySet()
 
         if (targetSet.isEmpty()) {
@@ -59,7 +60,78 @@ class KeepAliveService : Service() {
         }
 
         startMonitor(prefs)
+
         return START_STICKY
+    }
+
+    // ============ АВТОЗАПУСК С АВТОПЛЕЕМ ============
+
+    private fun launchApp(pkg: String, delaySec: Long, prefs: SharedPreferences) {
+        try {
+            val launchIntent = packageManager.getLaunchIntentForPackage(pkg)
+            if (launchIntent != null) {
+                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(launchIntent)
+                LogWriter.log("+ Запущен $pkg (задержка ${delaySec}с)")
+
+                // ============ АВТОПЛЕЙ ДЛЯ ЯНДЕКС.МУЗЫКИ ============
+                if (pkg == "ru.yandex.music") {
+                    val autoplayEnabled = prefs.getBoolean("autoplay_yandex", false)
+                    LogWriter.log("Яндекс.Музыка: автоплей=${autoplayEnabled}")
+                    if (autoplayEnabled) {
+                        // Ждём загрузки приложения и отправляем команду Play
+                        handler.postDelayed({
+                            sendPlayCommand()
+                        }, 3000L)
+                        LogWriter.log("~ Яндекс.Музыка: запланирован автоплей через 3с")
+                    }
+                }
+                // =================================================
+
+                val bgMode = prefs.getBoolean("bg_$pkg", false)
+                if (bgMode) {
+                    val goHomeSec = prefs.getFloat("bg_go_home_delay_sec", 1.5f)
+                        .coerceIn(0.5f, 10.0f)
+                    val goHomeMs = (goHomeSec * 1000).toLong()
+                    handler.postDelayed({
+                        goHome()
+                        LogWriter.log("~ $pkg свёрнут в фон (пауза ${goHomeSec}с)")
+                    }, goHomeMs)
+                }
+            } else {
+                LogWriter.log("- Не найдена точка входа для $pkg")
+            }
+        } catch (e: Exception) {
+            LogWriter.log("- ОШИБКА запуска $pkg: ${e.message}")
+        }
+    }
+
+    /**
+     * Эмулирует нажатие медиа-кнопки "Play/Pause" через AudioManager.
+     */
+    private fun sendPlayCommand() {
+        try {
+            val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            val eventTime = android.os.SystemClock.uptimeMillis()
+
+            val downEvent = KeyEvent(
+                eventTime, eventTime,
+                KeyEvent.ACTION_DOWN,
+                KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, 0
+            )
+            val upEvent = KeyEvent(
+                eventTime, eventTime,
+                KeyEvent.ACTION_UP,
+                KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, 0
+            )
+
+            audioManager.dispatchMediaKeyEvent(downEvent)
+            audioManager.dispatchMediaKeyEvent(upEvent)
+
+            LogWriter.log("+ Отправлена команда Play (эмуляция медиа-кнопки)")
+        } catch (e: Exception) {
+            LogWriter.log("- Ошибка отправки Play: ${e.message}")
+        }
     }
 
     // ============ МОНИТОР ============
@@ -192,84 +264,6 @@ class KeepAliveService : Service() {
             }
         } catch (e: Exception) {
             LogWriter.log("- Монитор: ошибка запуска $pkg: ${e.message}")
-        }
-    }
-
-    // ============ АВТОЗАПУСК ============
-
-    private fun launchApp(pkg: String, delaySec: Long, prefs: SharedPreferences) {
-        try {
-            val launchIntent = packageManager.getLaunchIntentForPackage(pkg)
-            if (launchIntent != null) {
-                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                startActivity(launchIntent)
-                LogWriter.log("+ Запущен $pkg (задержка ${delaySec}с)")
-
-                // === АВТОПЛЕЙ ===
-                // Проверяем ключ autoplay_<pkg> — если стоит галочка, шлём Play
-                val autoplay = prefs.getBoolean("autoplay_$pkg", false)
-                if (autoplay) {
-                    LogWriter.log("Автоплей: ждём 3с и отправляем Play для $pkg")
-                    handler.postDelayed({
-                        sendPlayCommand()
-                    }, 3000L)
-                }
-
-                // Проверяем режим «Фон»
-                val bgMode = prefs.getBoolean("bg_$pkg", false)
-                if (bgMode) {
-                    val goHomeSec = prefs.getFloat("bg_go_home_delay_sec", 1.5f)
-                        .coerceIn(0.5f, 10.0f)
-                    val goHomeMs = (goHomeSec * 1000).toLong()
-                    handler.postDelayed({
-                        goHome()
-                        LogWriter.log("~ $pkg свёрнут в фон (пауза ${goHomeSec}с)")
-                    }, goHomeMs)
-                }
-            } else {
-                LogWriter.log("- Не найдена точка входа для $pkg")
-            }
-        } catch (e: Exception) {
-            LogWriter.log("- ОШИБКА запуска $pkg: ${e.message}")
-        }
-    }
-
-    /**
-     * Отправляет команду Play через AudioManager (эмуляция кнопки).
-     * На Android 9 может не сработать из-за ограничений системы.
-     */
-    private fun sendPlayCommand() {
-        try {
-            val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY))
-            am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY))
-            LogWriter.log("+ Автоплей: отправлена команда MEDIA_PLAY")
-
-            // Повтор через 500 мс — чтобы точно дошло
-            handler.postDelayed({
-                try {
-                    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY))
-                    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY))
-                    LogWriter.log("+ Автоплей: повтор MEDIA_PLAY")
-                } catch (e: Exception) {
-                    LogWriter.log("Автоплей повтор: ошибка ${e.message}")
-                }
-            }, 500L)
-
-        } catch (e: Exception) {
-            LogWriter.log("- Автоплей: ошибка ${e.message}")
-        }
-    }
-
-    private fun goHome() {
-        try {
-            val home = Intent(Intent.ACTION_MAIN).apply {
-                addCategory(Intent.CATEGORY_HOME)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            startActivity(home)
-        } catch (e: Exception) {
-            LogWriter.log("- Ошибка возврата домой: ${e.message}")
         }
     }
 
