@@ -28,19 +28,19 @@ class MainActivity : AppCompatActivity() {
     private var showingSetup = false
     private var lastPermissionState = ""
 
+    // Для перерисовки главного экрана без recreate()
+    private var mainScrollView: ScrollView? = null
+    private var mainRoot: LinearLayout? = null
+
     // Цвета
     private val colorBg = Color.parseColor("#F5F5F7")
     private val colorCard = Color.WHITE
     private val colorGreen = Color.parseColor("#4CAF50")
     private val colorRed = Color.parseColor("#E53935")
     private val colorGray = Color.parseColor("#EEEEEE")
-    private val colorGrayDark = Color.parseColor("#BDBDBD")
     private val colorText = Color.parseColor("#212121")
     private val colorTextLight = Color.parseColor("#616161")
     private val colorBorder = Color.parseColor("#E0E0E0")
-
-    // Для восстановления позиции скролла
-    private var savedScrollY: Int = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -94,16 +94,6 @@ class MainActivity : AppCompatActivity() {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { setMargins(0, 12, 0, 12) }
-        }
-    }
-
-    private fun sectionTitle(text: String): TextView {
-        return TextView(this).apply {
-            this.text = text
-            textSize = 13f
-            setTextColor(colorTextLight)
-            letterSpacing = 0.1f
-            setPadding(10, 30, 10, 10)
         }
     }
 
@@ -318,13 +308,29 @@ class MainActivity : AppCompatActivity() {
 
     // ============ ГЛАВНЫЙ ЭКРАН ============
 
+    /** Вызывается из onCreate и из обработчика клика — пересобирает экран без recreate(). */
     private fun showMainScreen() {
         showingSetup = false
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(30, 40, 30, 40)
-            setBackgroundColor(colorBg)
+        if (mainScrollView == null) {
+            // Первое построение — создаём контейнеры
+            mainScrollView = ScrollView(this).apply {
+                setBackgroundColor(colorBg)
+            }
+            mainRoot = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(30, 40, 30, 40)
+                setBackgroundColor(colorBg)
+            }
+            (mainScrollView as ScrollView).addView(mainRoot)
+            setContentView(mainScrollView)
         }
+        rebuildMainContent()
+    }
+
+    /** Полностью пересобирает содержимое главного экрана. */
+    private fun rebuildMainContent() {
+        val root = mainRoot ?: return
+        root.removeAllViews()
 
         root.addView(TextView(this).apply {
             text = "AutoStart Pro"
@@ -372,19 +378,18 @@ class MainActivity : AppCompatActivity() {
 
         // ============ КАРТОЧКА: МОНИТОР (СО СПОЙЛЕРОМ) ============
         val monitorCard = card()
-
-        // Спойлер-заголовок
         val monitorOpen = prefs.getBoolean("monitor_spoiler_open", false)
+
         val spoilerHeader = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, 0, 0, 0)
             isClickable = true
             isFocusable = true
             setOnClickListener {
                 val newState = !prefs.getBoolean("monitor_spoiler_open", false)
                 prefs.edit().putBoolean("monitor_spoiler_open", newState).apply()
-                recreate()
+                // Просто пересобираем контент — без recreate и без сворачивания приложения
+                rebuildMainContent()
             }
         }
         spoilerHeader.addView(TextView(this).apply {
@@ -401,7 +406,6 @@ class MainActivity : AppCompatActivity() {
         monitorCard.addView(spoilerHeader)
 
         if (monitorOpen) {
-            // Содержимое монитора
             val monitorOn = prefs.getBoolean("monitor_enabled", false)
 
             val monitorEnabledCheck = CheckBox(this).apply {
@@ -412,12 +416,11 @@ class MainActivity : AppCompatActivity() {
                 setPadding(0, 20, 0, 0)
                 setOnCheckedChangeListener { _, checked ->
                     prefs.edit().putBoolean("monitor_enabled", checked).apply()
-                    recreate()
+                    rebuildMainContent()
                 }
             }
             monitorCard.addView(monitorEnabledCheck)
 
-            // Карточка-кнопка выбора пакета
             val packageCard = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -471,7 +474,7 @@ class MainActivity : AppCompatActivity() {
                         setOnClickListener {
                             prefs.edit().remove("monitor_package").apply()
                             Toast.makeText(this@MainActivity, "Пакет монитора очищен", Toast.LENGTH_SHORT).show()
-                            recreate()
+                            rebuildMainContent()
                         }
                     }
                     packageCard.addView(clearBtn)
@@ -490,7 +493,7 @@ class MainActivity : AppCompatActivity() {
                         setPadding(20, 10, 20, 10)
                         setOnClickListener {
                             prefs.edit().remove("monitor_package").apply()
-                            recreate()
+                            rebuildMainContent()
                         }
                     }
                     packageCard.addView(clearBtn)
@@ -509,7 +512,7 @@ class MainActivity : AppCompatActivity() {
             packageCard.setOnClickListener {
                 showPackagePickerDialog { pkg ->
                     prefs.edit().putString("monitor_package", pkg).apply()
-                    recreate()
+                    rebuildMainContent()
                 }
             }
             monitorCard.addView(packageCard)
@@ -564,7 +567,7 @@ class MainActivity : AppCompatActivity() {
         root.addView(roundedButton("ОТКЛЮЧИТЬ АВТОЗАПУСК", colorRed, Color.WHITE) {
             prefs.edit().remove("target_packages").apply()
             Toast.makeText(this@MainActivity, "Отключено", Toast.LENGTH_SHORT).show()
-            recreate()
+            rebuildMainContent()
         })
 
         root.addView(roundedButton("ПОКАЗАТЬ ЛОГ", colorGray, colorText) { showLogDialog() })
@@ -579,10 +582,8 @@ class MainActivity : AppCompatActivity() {
         })
 
         // ============ СПИСОК ПРИЛОЖЕНИЙ ============
-        // Якорь для прокрутки к списку
-        val listAnchorId = View.generateViewId()
+        // Якорь для прокрутки — сохраняем ссылку на view
         val listTitle = TextView(this).apply {
-            id = listAnchorId
             text = "ВЫБЕРИТЕ ПРИЛОЖЕНИЯ"
             textSize = 13f
             setTextColor(colorTextLight)
@@ -619,31 +620,7 @@ class MainActivity : AppCompatActivity() {
             val label = pm.getApplicationLabel(app).toString()
             val icon = pm.getApplicationIcon(app)
             val isSelected = savedPackages.contains(app.packageName)
-            root.addView(createAppRow(label, icon, isSelected, app.packageName))
-        }
-
-        // Оборачиваем в ScrollView и восстанавливаем позицию скролла
-        val scrollView = ScrollView(this).apply {
-            setBackgroundColor(colorBg)
-            addView(root)
-        }
-        setContentView(scrollView)
-
-        // Восстанавливаем позицию скролла и/или прокручиваем к списку
-        scrollView.post {
-            val scrollToList = intent.getBooleanExtra("SCROLL_TO_LIST", false)
-            val scrollToListIndex = intent.getIntExtra("SCROLL_TO_LIST_INDEX", -1)
-
-            if (scrollToList && scrollToListIndex >= 0) {
-                // Ищем View строки, которую только что нажали, и скроллим к ней
-                // Проще: скроллим так, чтобы строка оказалась на видном месте
-                val listTitleView = scrollView.findViewById<View>(listAnchorId)
-                if (listTitleView != null) {
-                    scrollView.smoothScrollTo(0, listTitleView.top)
-                }
-            } else if (savedScrollY > 0) {
-                scrollView.scrollTo(0, savedScrollY)
-            }
+            root.addView(createAppRow(label, icon, isSelected, app.packageName, listTitle))
         }
     }
 
@@ -708,7 +685,13 @@ class MainActivity : AppCompatActivity() {
         return if (sec % 1.0f == 0.0f) sec.toInt().toString() else sec.toString()
     }
 
-    private fun createAppRow(label: String, icon: Drawable, isSelected: Boolean, pkg: String): LinearLayout {
+    private fun createAppRow(
+        label: String,
+        icon: Drawable,
+        isSelected: Boolean,
+        pkg: String,
+        listTitle: View
+    ): LinearLayout {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -784,15 +767,13 @@ class MainActivity : AppCompatActivity() {
             }
             prefs.edit().putStringSet("target_packages", currentSet).apply()
 
-            // Вместо recreate() с полным сбросом скролла — recreate() с сохранением
-            // позиции через флаг SCROLL_TO_LIST, чтобы вернуться к списку приложений
-            val intent = Intent(this@MainActivity, MainActivity::class.java).apply {
-                addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                putExtra("SCROLL_TO_LIST", true)
-                putExtra("SCROLL_TO_LIST_INDEX", 0)
+            // Пересобираем содержимое без recreate() — приложение не сворачивается
+            rebuildMainContent()
+
+            // После пересборки — прокручиваем к заголовку списка
+            mainScrollView?.post {
+                mainScrollView?.smoothScrollTo(0, listTitle.top - 20)
             }
-            startActivity(intent)
-            finish()
         }
 
         return row
