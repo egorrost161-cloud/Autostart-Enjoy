@@ -38,7 +38,6 @@ class KeepAliveService : Service() {
             return START_STICKY
         }
 
-        // Обычный режим: автозапуск всех приложений + старт монитора
         val targetSet = prefs.getStringSet("target_packages", emptySet()) ?: emptySet()
 
         if (targetSet.isEmpty()) {
@@ -77,9 +76,8 @@ class KeepAliveService : Service() {
                 // ============ АВТОПЛЕЙ ДЛЯ ЯНДЕКС.МУЗЫКИ ============
                 if (pkg == "ru.yandex.music") {
                     val autoplayEnabled = prefs.getBoolean("autoplay_yandex", false)
-                    LogWriter.log("Яндекс.Музыка: автоплей=${autoplayEnabled}")
+                    LogWriter.log("Яндекс.Музыка: автоплей=$autoplayEnabled")
                     if (autoplayEnabled) {
-                        // Ждём загрузки приложения и отправляем команду Play
                         handler.postDelayed({
                             sendPlayCommand()
                         }, 3000L)
@@ -106,9 +104,7 @@ class KeepAliveService : Service() {
         }
     }
 
-    /**
-     * Эмулирует нажатие медиа-кнопки "Play/Pause" через AudioManager.
-     */
+    /** Эмулирует нажатие медиа-кнопки "Play/Pause" через AudioManager. */
     private fun sendPlayCommand() {
         try {
             val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -131,6 +127,19 @@ class KeepAliveService : Service() {
             LogWriter.log("+ Отправлена команда Play (эмуляция медиа-кнопки)")
         } catch (e: Exception) {
             LogWriter.log("- Ошибка отправки Play: ${e.message}")
+        }
+    }
+
+    /** Возвращает на домашний экран (эмулирует нажатие Home). */
+    private fun goHome() {
+        try {
+            val home = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_HOME)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(home)
+        } catch (e: Exception) {
+            LogWriter.log("- Ошибка возврата домой: ${e.message}")
         }
     }
 
