@@ -29,6 +29,7 @@ class MainActivity : AppCompatActivity() {
     private val colorGray = Color.parseColor("#E0E0E0")
     private val colorGreenText = Color.WHITE
     private val colorGrayText = Color.parseColor("#222222")
+    private val colorRed = Color.parseColor("#D32F2F")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -315,12 +316,17 @@ class MainActivity : AppCompatActivity() {
                 val label = packageManager.getApplicationLabel(appInfo).toString()
                 val icon = packageManager.getApplicationIcon(appInfo)
 
+                // Иконка приложения
                 packageCard.addView(ImageView(this).apply {
                     setImageDrawable(icon)
                     layoutParams = LinearLayout.LayoutParams(80, 80).apply { setMargins(0, 0, 20, 0) }
                 })
 
-                val textCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+                // Название + пакет (занимают всё свободное место)
+                val textCol = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                }
                 textCol.addView(TextView(this).apply {
                     text = label
                     textSize = 16f
@@ -332,18 +338,52 @@ class MainActivity : AppCompatActivity() {
                     setTextColor(Color.GRAY)
                 })
                 packageCard.addView(textCol)
+
+                // Кнопка «×» — убрать выбранное приложение
+                val clearBtn = TextView(this).apply {
+                    text = "✕"
+                    textSize = 26f
+                    setTextColor(colorRed)
+                    gravity = Gravity.CENTER
+                    setPadding(20, 10, 20, 10)
+                    isClickable = true
+                    isFocusable = true
+                    setOnClickListener {
+                        // Сбрасываем выбранный пакет
+                        prefs.edit().remove("monitor_package").apply()
+                        Toast.makeText(this@MainActivity, "Пакет монитора очищен", Toast.LENGTH_SHORT).show()
+                        recreate()
+                    }
+                }
+                packageCard.addView(clearBtn)
+
             } else {
                 packageCard.addView(TextView(this).apply {
                     text = "⚠  Приложение удалено — нажми, чтобы выбрать заново"
                     textSize = 14f
                     setTextColor(Color.RED)
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 })
+
+                val clearBtn = TextView(this).apply {
+                    text = "✕"
+                    textSize = 26f
+                    setTextColor(colorRed)
+                    gravity = Gravity.CENTER
+                    setPadding(20, 10, 20, 10)
+                    setOnClickListener {
+                        prefs.edit().remove("monitor_package").apply()
+                        recreate()
+                    }
+                }
+                packageCard.addView(clearBtn)
             }
         } else {
             packageCard.addView(TextView(this).apply {
                 text = "Не выбрано — нажми, чтобы выбрать приложение"
                 textSize = 14f
                 setTextColor(colorGrayText)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
         }
 
