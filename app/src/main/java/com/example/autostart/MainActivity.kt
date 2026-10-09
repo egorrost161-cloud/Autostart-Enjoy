@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.Drawable
 import android.os.Build
 import android.os.Bundle
@@ -26,11 +27,17 @@ class MainActivity : AppCompatActivity() {
     private var showingSetup = false
     private var lastPermissionState = ""
 
-    private val colorGreen = Color.parseColor("#4CAF50")
-    private val colorGray = Color.parseColor("#E0E0E0")
-    private val colorGreenText = Color.WHITE
-    private val colorGrayText = Color.parseColor("#222222")
-    private val colorRed = Color.parseColor("#D32F2F")
+    // Цвета
+    private val colorBg = Color.parseColor("#F5F5F7")           // фон
+    private val colorCard = Color.WHITE                          // карточка
+    private val colorGreen = Color.parseColor("#4CAF50")         // зелёный
+    private val colorGreenDark = Color.parseColor("#388E3C")     // зелёный тёмный
+    private val colorRed = Color.parseColor("#E53935")           // красный
+    private val colorGray = Color.parseColor("#EEEEEE")          // серый
+    private val colorGrayDark = Color.parseColor("#757575")      // серый тёмный
+    private val colorText = Color.parseColor("#212121")          // основной текст
+    private val colorTextLight = Color.parseColor("#616161")     // второстепенный текст
+    private val colorBorder = Color.parseColor("#E0E0E0")        // границы
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -57,6 +64,99 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
+    // ============ УТИЛИТЫ UI ============
+
+    /** Создаёт фон с закруглёнными углами. */
+    private fun roundedBg(color: Int, radiusPx: Int = 24): GradientDrawable {
+        return GradientDrawable().apply {
+            setColor(color)
+            cornerRadius = radiusPx.toFloat()
+        }
+    }
+
+    /** Создаёт фон с закруглёнными углами и рамкой. */
+    private fun roundedBgWithBorder(fill: Int, border: Int, radiusPx: Int = 24): GradientDrawable {
+        return GradientDrawable().apply {
+            setColor(fill)
+            cornerRadius = radiusPx.toFloat()
+            setStroke(2, border)
+        }
+    }
+
+    /** Создаёт карточку-контейнер. */
+    private fun card(): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 30, 40, 30)
+            background = roundedBg(colorCard, 32)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 12, 0, 12) }
+        }
+    }
+
+    /** Создаёт заголовок секции. */
+    private fun sectionTitle(text: String): TextView {
+        return TextView(this).apply {
+            this.text = text
+            textSize = 13f
+            setTextColor(colorTextLight)
+            letterSpacing = 0.1f
+            setPadding(10, 30, 10, 10)
+        }
+    }
+
+    /** Создаёт подпись. */
+    private fun label(text: String): TextView {
+        return TextView(this).apply {
+            this.text = text
+            textSize = 14f
+            setTextColor(colorText)
+            setPadding(0, 12, 0, 4)
+        }
+    }
+
+    /** Создаёт подпись-подсказку. */
+    private fun hint(text: String): TextView {
+        return TextView(this).apply {
+            this.text = text
+            textSize = 11f
+            setTextColor(colorTextLight)
+            setPadding(0, 4, 0, 8)
+        }
+    }
+
+    /** Создаёт поле ввода. */
+    private fun inputField(hintText: String): EditText {
+        return EditText(this).apply {
+            hint = hintText
+            textSize = 14f
+            setTextColor(colorText)
+            setPadding(24, 20, 24, 20)
+            background = roundedBgWithBorder(colorBg, colorBorder, 20)
+        }
+    }
+
+    /** Создаёт кнопку с закруглёнными углами. */
+    private fun roundedButton(text: String, bgColor: Int, textColor: Int, onClick: () -> Unit): Button {
+        return Button(this).apply {
+            this.text = text
+            textSize = 15f
+            setTextColor(textColor)
+            isAllCaps = false
+            background = roundedBg(bgColor, 24)
+            setPadding(20, 30, 20, 30)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 6, 0, 6) }
+            setOnClickListener { onClick() }
+        }
+    }
+
+    // ============ РАЗРЕШЕНИЯ ============
 
     private fun permissionStateKey(): String {
         return "${Settings.canDrawOverlays(this)}|${hasUsageStatsPermission()}|${batteryGranted()}|${areNotificationsEnabled()}"
@@ -124,8 +224,10 @@ class MainActivity : AppCompatActivity() {
         return Button(this).apply {
             text = if (granted) "✓  $title" else "○  $title"
             textSize = 15f
-            setTextColor(if (granted) colorGreenText else colorGrayText)
-            setBackgroundColor(if (granted) colorGreen else colorGray)
+            setTextColor(if (granted) Color.WHITE else colorText)
+            isAllCaps = false
+            background = roundedBg(if (granted) colorGreen else colorGray, 24)
+            setPadding(20, 30, 20, 30)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -134,27 +236,36 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // ============ ЭКРАН НАСТРОЙКИ ============
+
     private fun showSetupScreen() {
         showingSetup = true
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(40, 60, 40, 40)
+            setPadding(30, 40, 30, 40)
+            setBackgroundColor(colorBg)
         }
 
+        // Заголовок
         root.addView(TextView(this).apply {
             text = "AutoStart Pro"
-            textSize = 26f
+            textSize = 28f
+            setTextColor(colorText)
             gravity = Gravity.CENTER
+            setPadding(0, 20, 0, 10)
         })
 
         root.addView(TextView(this).apply {
-            text = "\nДля работы нужно 4 разрешения.\nНажми на каждое — откроется системная настройка.\nКогда галочка станет зелёной — жми «ПРОДОЛЖИТЬ».\n"
-            textSize = 15f
+            text = "Для работы нужно 4 разрешения.\nНажми на каждое — откроется системная настройка.\nКогда галочка станет зелёной — жми «ПРОДОЛЖИТЬ»."
+            textSize = 14f
+            setTextColor(colorTextLight)
             gravity = Gravity.CENTER
-            setPadding(0, 20, 0, 20)
+            setPadding(0, 10, 0, 30)
         })
 
-        root.addView(permissionButton("Наложение поверх окон", overlayGranted()) {
+        // Карточка с разрешениями
+        val permsCard = card()
+        permsCard.addView(permissionButton("Наложение поверх окон", overlayGranted()) {
             if (!overlayGranted()) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                     startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName")))
@@ -163,8 +274,7 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this@MainActivity, "Уже выдано", Toast.LENGTH_SHORT).show()
             }
         })
-
-        root.addView(permissionButton("Статистика использования", hasUsageStatsPermission()) {
+        permsCard.addView(permissionButton("Статистика использования", hasUsageStatsPermission()) {
             if (!hasUsageStatsPermission()) {
                 startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
                 Toast.makeText(this@MainActivity, "Найди AutoStart Pro и включи доступ", Toast.LENGTH_LONG).show()
@@ -172,8 +282,7 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this@MainActivity, "Уже выдано", Toast.LENGTH_SHORT).show()
             }
         })
-
-        root.addView(permissionButton("Игнор батареи", batteryGranted()) {
+        permsCard.addView(permissionButton("Игнор батареи", batteryGranted()) {
             if (!batteryGranted()) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                     try {
@@ -188,8 +297,7 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this@MainActivity, "Уже выдано", Toast.LENGTH_SHORT).show()
             }
         })
-
-        root.addView(permissionButton("Уведомления", areNotificationsEnabled()) {
+        permsCard.addView(permissionButton("Уведомления", areNotificationsEnabled()) {
             if (!areNotificationsEnabled()) {
                 openNotificationSettings()
                 Toast.makeText(this@MainActivity, "Включи уведомления для AutoStart Pro", Toast.LENGTH_LONG).show()
@@ -197,61 +305,51 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this@MainActivity, "Уже выдано", Toast.LENGTH_SHORT).show()
             }
         })
+        root.addView(permsCard)
 
-        root.addView(Button(this).apply {
-            text = "ОБНОВИТЬ СТАТУС"
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(0, 20, 0, 6) }
-            setOnClickListener { recreate() }
-        })
-
-        root.addView(Button(this).apply {
-            text = "ПРОДОЛЖИТЬ"
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(0, 6, 0, 6) }
-            setOnClickListener {
-                if (areAllPermissionsGranted()) {
-                    prefs.edit().putBoolean("setup_done", true).apply()
-                } else {
-                    Toast.makeText(this@MainActivity, "Не все разрешения выданы", Toast.LENGTH_SHORT).show()
-                }
-                recreate()
+        // Кнопки
+        root.addView(roundedButton("ОБНОВИТЬ СТАТУС", colorGray, colorText) { recreate() })
+        root.addView(roundedButton("ПРОДОЛЖИТЬ", colorGreen, Color.WHITE) {
+            if (areAllPermissionsGranted()) {
+                prefs.edit().putBoolean("setup_done", true).apply()
+            } else {
+                Toast.makeText(this@MainActivity, "Не все разрешения выданы", Toast.LENGTH_SHORT).show()
             }
+            recreate()
         })
 
-        setContentView(ScrollView(this).apply { addView(root) })
+        setContentView(ScrollView(this).apply {
+            setBackgroundColor(colorBg)
+            addView(root)
+        })
     }
+
+    // ============ ГЛАВНЫЙ ЭКРАН ============
 
     private fun showMainScreen() {
         showingSetup = false
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(40, 40, 40, 40)
+            setPadding(30, 40, 30, 40)
+            setBackgroundColor(colorBg)
         }
 
+        // Заголовок
         root.addView(TextView(this).apply {
             text = "AutoStart Pro"
-            textSize = 24f
+            textSize = 26f
+            setTextColor(colorText)
+            gravity = Gravity.CENTER
+            setPadding(0, 10, 0, 20)
         })
 
-        // === Пауза сворачивания ===
-        root.addView(TextView(this).apply {
-            text = "Пауза перед сворачиванием (сек):"
-            textSize = 14f
-            setPadding(0, 10, 0, 0)
-        })
-
-        val bgDelayInput = EditText(this).apply {
+        // ============ КАРТОЧКА: СВОРАЧИВАНИЕ ============
+        val delayCard = card()
+        delayCard.addView(label("Пауза перед сворачиванием (сек)"))
+        val bgDelayInput = inputField("1.5").apply {
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
             val savedSec = prefs.getFloat("bg_go_home_delay_sec", 1.5f)
             setText(formatSeconds(savedSec))
-            textSize = 14f
-            hint = "1.5"
-            setPadding(10, 10, 10, 10)
             addTextChangedListener(object : TextWatcher {
                 override fun afterTextChanged(s: Editable?) {
                     val sec = s?.toString()?.replace(',', '.')?.toFloatOrNull() ?: return
@@ -262,61 +360,58 @@ class MainActivity : AppCompatActivity() {
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             })
         }
-        root.addView(bgDelayInput)
+        delayCard.addView(bgDelayInput)
+        delayCard.addView(hint("Диапазон: 0.5 – 10 сек"))
+        root.addView(delayCard)
 
-        root.addView(TextView(this).apply {
-            text = "Диапазон: 0.5 – 10 сек."
-            textSize = 11f
-            setPadding(0, 0, 0, 20)
-        })
-
-        // === Галочка автоплея Яндекс.Музыки ===
+        // ============ КАРТОЧКА: АВТОПЛЕЙ ============
+        val autoplayCard = card()
         val autoplayCheck = CheckBox(this).apply {
             text = "Автоплей Яндекс.Музыки"
-            textSize = 14f
+            textSize = 15f
+            setTextColor(colorText)
             isChecked = prefs.getBoolean("autoplay_yandex", false)
             setOnCheckedChangeListener { _, checked ->
                 prefs.edit().putBoolean("autoplay_yandex", checked).apply()
             }
         }
-        root.addView(autoplayCheck)
+        autoplayCard.addView(autoplayCheck)
+        autoplayCard.addView(hint("Пробует отправить команду Play через 3 и 6 секунд после запуска"))
+        root.addView(autoplayCard)
 
-        root.addView(TextView(this).apply {
-            text = "Пробует отправить команду Play через 3 и 6 секунд после запуска."
-            textSize = 11f
-            setPadding(0, 0, 0, 20)
-        })
-
-        // ============ БЛОК МОНИТОРА ============
-        root.addView(TextView(this).apply {
-            text = "─── МОНИТОР ЛАУНЧЕРА ───"
-            textSize = 14f
-            gravity = Gravity.CENTER
-            setPadding(0, 10, 0, 10)
-        })
-
+        // ============ КАРТОЧКА: МОНИТОР ============
         val monitorOn = prefs.getBoolean("monitor_enabled", false)
+        val monitorCard = card()
+
+        monitorCard.addView(TextView(this).apply {
+            text = "Монитор лаунчера"
+            textSize = 16f
+            setTextColor(colorText)
+            setPadding(0, 0, 0, 10)
+        })
 
         val monitorEnabledCheck = CheckBox(this).apply {
             text = "Включить монитор"
-            textSize = 16f
+            textSize = 15f
+            setTextColor(colorText)
             isChecked = monitorOn
             setOnCheckedChangeListener { _, checked ->
                 prefs.edit().putBoolean("monitor_enabled", checked).apply()
                 recreate()
             }
         }
-        root.addView(monitorEnabledCheck)
+        monitorCard.addView(monitorEnabledCheck)
 
+        // Карточка-кнопка выбора пакета монитора
         val packageCard = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(20, 20, 20, 20)
-            setBackgroundColor(colorGray)
+            setPadding(24, 24, 24, 24)
+            background = roundedBgWithBorder(colorBg, colorBorder, 20)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(0, 10, 0, 10) }
+            ).apply { setMargins(0, 12, 0, 12) }
         }
 
         val savedMonitorPkg = prefs.getString("monitor_package", "") ?: ""
@@ -345,12 +440,12 @@ class MainActivity : AppCompatActivity() {
                 textCol.addView(TextView(this).apply {
                     text = label
                     textSize = 16f
-                    setTextColor(colorGrayText)
+                    setTextColor(colorText)
                 })
                 textCol.addView(TextView(this).apply {
                     text = savedMonitorPkg
                     textSize = 11f
-                    setTextColor(Color.GRAY)
+                    setTextColor(colorTextLight)
                 })
                 packageCard.addView(textCol)
 
@@ -372,7 +467,7 @@ class MainActivity : AppCompatActivity() {
                 packageCard.addView(TextView(this).apply {
                     text = "⚠  Приложение удалено — нажми, чтобы выбрать заново"
                     textSize = 14f
-                    setTextColor(Color.RED)
+                    setTextColor(colorRed)
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 })
 
@@ -393,7 +488,7 @@ class MainActivity : AppCompatActivity() {
             packageCard.addView(TextView(this).apply {
                 text = "Не выбрано — нажми, чтобы выбрать приложение"
                 textSize = 14f
-                setTextColor(colorGrayText)
+                setTextColor(colorTextLight)
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
         }
@@ -406,19 +501,12 @@ class MainActivity : AppCompatActivity() {
                 recreate()
             }
         }
-        root.addView(packageCard)
+        monitorCard.addView(packageCard)
 
-        root.addView(TextView(this).apply {
-            text = "Интервал проверки (сек), 5–300:"
-            textSize = 13f
-            setPadding(0, 10, 0, 0)
-        })
-        val intervalInput = EditText(this).apply {
+        monitorCard.addView(label("Интервал проверки (сек)"))
+        val intervalInput = inputField("30").apply {
             inputType = InputType.TYPE_CLASS_NUMBER
             setText(prefs.getLong("monitor_interval_sec", 30L).toString())
-            textSize = 14f
-            hint = "30"
-            setPadding(10, 10, 10, 10)
             isEnabled = monitorOn
             addTextChangedListener(object : TextWatcher {
                 override fun afterTextChanged(s: Editable?) {
@@ -429,19 +517,13 @@ class MainActivity : AppCompatActivity() {
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             })
         }
-        root.addView(intervalInput)
+        monitorCard.addView(intervalInput)
+        monitorCard.addView(hint("5 – 300 сек"))
 
-        root.addView(TextView(this).apply {
-            text = "Неактивность порог (мин), 1–240:"
-            textSize = 13f
-            setPadding(0, 10, 0, 0)
-        })
-        val idleInput = EditText(this).apply {
+        monitorCard.addView(label("Неактивность порог (мин)"))
+        val idleInput = inputField("30").apply {
             inputType = InputType.TYPE_CLASS_NUMBER
             setText(prefs.getLong("monitor_idle_minutes", 30L).toString())
-            textSize = 14f
-            hint = "30"
-            setPadding(10, 10, 10, 10)
             isEnabled = monitorOn
             addTextChangedListener(object : TextWatcher {
                 override fun afterTextChanged(s: Editable?) {
@@ -452,85 +534,45 @@ class MainActivity : AppCompatActivity() {
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             })
         }
-        root.addView(idleInput)
+        monitorCard.addView(idleInput)
+        monitorCard.addView(hint("1 – 240 мин. Монитор вернёт лаунчер, если он неактивен N минут"))
+        root.addView(monitorCard)
 
-        root.addView(TextView(this).apply {
-            text = "Монитор вернёт лаунчер, если он не был активен N минут."
-            textSize = 11f
-            setPadding(0, 0, 0, 20)
+        // ============ КНОПКИ УПРАВЛЕНИЯ ============
+        root.addView(roundedButton("ЗАПУСТИТЬ СЕРВИС СЕЙЧАС", colorGreen, Color.WHITE) {
+            val intent = Intent(this@MainActivity, KeepAliveService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
+            }
+            Toast.makeText(this@MainActivity, "Сервис запущен", Toast.LENGTH_SHORT).show()
         })
 
-        // ============ КНОПКИ ============
+        root.addView(roundedButton("ОТКЛЮЧИТЬ АВТОЗАПУСК", colorRed, Color.WHITE) {
+            prefs.edit().remove("target_packages").apply()
+            Toast.makeText(this@MainActivity, "Отключено", Toast.LENGTH_SHORT).show()
+            recreate()
+        })
 
-        root.addView(Button(this).apply {
-            text = "Запустить сервис сейчас"
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(0, 10, 0, 6) }
-            setOnClickListener {
-                val intent = Intent(this@MainActivity, KeepAliveService::class.java)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    startForegroundService(intent)
-                } else {
-                    startService(intent)
-                }
-                Toast.makeText(this@MainActivity, "Сервис запущен", Toast.LENGTH_SHORT).show()
+        root.addView(roundedButton("ПОКАЗАТЬ ЛОГ", colorGray, colorText) { showLogDialog() })
+        root.addView(roundedButton("ОЧИСТИТЬ ЛОГ", colorGray, colorText) {
+            try {
+                val file = File(filesDir, "autostart_log.txt")
+                if (file.exists()) file.delete()
+                Toast.makeText(this@MainActivity, "Лог очищен", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(this@MainActivity, "Ошибка: ${e.message}", Toast.LENGTH_SHORT).show()
             }
         })
 
-        root.addView(Button(this).apply {
-            text = "Отключить автозапуск"
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(0, 6, 0, 6) }
-            setOnClickListener {
-                prefs.edit().remove("target_packages").apply()
-                Toast.makeText(this@MainActivity, "Отключено", Toast.LENGTH_SHORT).show()
-                recreate()
-            }
-        })
-
-        // ============ КНОПКА ПОКАЗАТЬ ЛОГ ============
-        root.addView(Button(this).apply {
-            text = "Показать лог"
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(0, 6, 0, 6) }
-            setOnClickListener {
-                showLogDialog()
-            }
-        })
-
-        root.addView(Button(this).apply {
-            text = "Очистить лог"
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(0, 6, 0, 6) }
-            setOnClickListener {
-                try {
-                    val file = File(filesDir, "autostart_log.txt")
-                    if (file.exists()) file.delete()
-                    Toast.makeText(this@MainActivity, "Лог очищен", Toast.LENGTH_SHORT).show()
-                } catch (e: Exception) {
-                    Toast.makeText(this@MainActivity, "Ошибка: ${e.message}", Toast.LENGTH_SHORT).show()
-                }
-            }
-        })
-
-        root.addView(TextView(this).apply {
-            text = "ВЫБЕРИТЕ ПРИЛОЖЕНИЯ"
-            textSize = 16f
-            setPadding(0, 30, 0, 10)
-        })
-
+        // ============ СПИСОК ПРИЛОЖЕНИЙ ============
+        root.addView(sectionTitle("ВЫБЕРИТЕ ПРИЛОЖЕНИЯ"))
         root.addView(TextView(this).apply {
             text = "Тап по строке — выбор. Фон — свернуть после запуска."
             textSize = 12f
-            setPadding(0, 0, 0, 10)
+            setTextColor(colorTextLight)
+            setPadding(10, 0, 10, 10)
         })
 
         val pm = packageManager
@@ -557,21 +599,26 @@ class MainActivity : AppCompatActivity() {
             root.addView(createAppRow(label, icon, isSelected, app.packageName))
         }
 
-        setContentView(ScrollView(this).apply { addView(root) })
+        setContentView(ScrollView(this).apply {
+            setBackgroundColor(colorBg)
+            addView(root)
+        })
     }
+
+    // ============ ДИАЛОГИ ============
 
     private fun showLogDialog() {
         try {
             val file = File(filesDir, "autostart_log.txt")
             val text = if (file.exists()) file.readText() else "Лог пуст — событий ещё не было."
 
-            // Скроллируемый TextView внутри диалога
             val scroll = ScrollView(this)
             val textView = TextView(this).apply {
                 this.text = text
                 textSize = 11f
                 setPadding(20, 20, 20, 20)
                 setTextIsSelectable(true)
+                setTextColor(colorText)
             }
             scroll.addView(textView)
 
@@ -613,6 +660,8 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    // ============ СТРОКА ПРИЛОЖЕНИЯ ============
+
     private fun formatSeconds(sec: Float): String {
         return if (sec % 1.0f == 0.0f) sec.toInt().toString() else sec.toString()
     }
@@ -621,8 +670,8 @@ class MainActivity : AppCompatActivity() {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(20, 20, 20, 20)
-            setBackgroundColor(if (isSelected) colorGreen else colorGray)
+            setPadding(24, 24, 24, 24)
+            background = roundedBg(if (isSelected) colorGreen else colorCard, 24)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -631,13 +680,13 @@ class MainActivity : AppCompatActivity() {
 
         row.addView(ImageView(this).apply {
             setImageDrawable(icon)
-            layoutParams = LinearLayout.LayoutParams(100, 100).apply { setMargins(0, 0, 20, 0) }
+            layoutParams = LinearLayout.LayoutParams(90, 90).apply { setMargins(0, 0, 20, 0) }
         })
 
         row.addView(TextView(this).apply {
             text = if (isSelected) "✓  $label" else "○  $label"
             textSize = 16f
-            setTextColor(if (isSelected) colorGreenText else colorGrayText)
+            setTextColor(if (isSelected) Color.WHITE else colorText)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
 
@@ -645,10 +694,15 @@ class MainActivity : AppCompatActivity() {
             inputType = InputType.TYPE_CLASS_NUMBER
             setText(prefs.getLong("delay_$pkg", 15L).toString())
             textSize = 14f
-            width = 120
+            width = 140
             hint = "15"
-            setPadding(10, 10, 10, 10)
-            setTextColor(colorGrayText)
+            setPadding(20, 15, 20, 15)
+            setTextColor(if (isSelected) Color.WHITE else colorText)
+            background = roundedBgWithBorder(
+                if (isSelected) Color.parseColor("#66FFFFFF") else colorBg,
+                if (isSelected) Color.parseColor("#88FFFFFF") else colorBorder,
+                16
+            )
             addTextChangedListener(object : TextWatcher {
                 override fun afterTextChanged(s: Editable?) {
                     val delay = s?.toString()?.toLongOrNull()
@@ -665,7 +719,7 @@ class MainActivity : AppCompatActivity() {
         val bgCheck = CheckBox(this).apply {
             text = "Фон"
             textSize = 12f
-            setTextColor(if (isSelected) colorGreenText else colorGrayText)
+            setTextColor(if (isSelected) Color.WHITE else colorText)
             isChecked = prefs.getBoolean("bg_$pkg", false)
             setOnCheckedChangeListener { _, checked ->
                 prefs.edit().putBoolean("bg_$pkg", checked).apply()
