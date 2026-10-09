@@ -5,7 +5,6 @@ import android.app.AppOpsManager
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
-import android.content.pm.ApplicationInfo
 import android.graphics.Color
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
@@ -31,13 +30,14 @@ class MainActivity : AppCompatActivity() {
     private var showingSetup = false
     private var lastPermissionState = ""
 
-    // Кэш приложений — заполняется 1 раз, чтобы не дёргать PackageManager
+    // Кэш приложений
     private data class AppEntry(
         val label: String,
         val icon: Drawable,
         val pkg: String
     )
     private var cachedApps: List<AppEntry>? = null
+    private var isLoadingApps = false
 
     // Ссылки на главный экран
     private var mainScrollView: ScrollView? = null
@@ -63,15 +63,13 @@ class MainActivity : AppCompatActivity() {
         prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
         LogWriter.init(this)
 
-        // Сразу кэшируем список приложений — 1 раз
-        cacheInstalledApps()
-
         if (!areAllPermissionsGranted()) {
             showingSetup = true
             showSetupScreen()
         } else {
             showingSetup = false
-            showMainScreen()
+            showMainScreen() // показываем экран СРАЗУ с "Загрузка..."
+            loadAppsInBackground() // в фоне грузим список
         }
         lastPermissionState = permissionStateKey()
     }
@@ -92,21 +90,35 @@ class MainActivity : AppCompatActivity() {
         handler.removeCallbacksAndMessages(null)
     }
 
-    /** Заполняет кэш приложений один раз. */
-    private fun cacheInstalledApps() {
-        val pm = packageManager
-        val apps = pm.getInstalledApplications(android.content.pm.PackageManager.GET_META_DATA)
-        val launchable = apps.filter { app ->
-            app.packageName != packageName &&
-            pm.getLaunchIntentForPackage(app.packageName) != null
-        }
-        cachedApps = launchable.map { app ->
-            AppEntry(
-                label = pm.getApplicationLabel(app).toString(),
-                icon = pm.getApplicationIcon(app),
-                pkg = app.packageName
-            )
-        }
+    /** Загружает список приложений в фоне, чтобы не тормозить запуск. */
+    private fun loadAppsInBackground() {
+        if (cachedApps != null || isLoadingApps) return
+        isLoadingApps = true
+
+        Thread {
+            val pm = packageManager
+            val apps = pm.getInstalledApplications(android.content.pm.PackageManager.GET_META_DATA)
+            val launchable = apps.filter { app ->
+                app.packageName != packageName &&
+                pm.getLaunchIntentForPackage(app.packageName) != null
+            }
+            val list = launchable.map { app ->
+                AppEntry(
+                    label = pm.getApplicationLabel(app).toString(),
+                    icon = pm.getApplicationIcon(app),
+                    pkg = app.packageName
+                )
+            }
+
+            // Возвращаемся в UI-поток и обновляем экран
+            runOnUiThread {
+                cachedApps = list
+                isLoadingApps = false
+                if (!showingSetup) {
+                    rebuildMainContent()
+                }
+            }
+        }.start()
     }
 
     // ============ УТИЛИТЫ UI ============
@@ -372,7 +384,7 @@ class MainActivity : AppCompatActivity() {
         // ============ КАРТОЧКА: СВОРАЧИВАНИЕ ============
         val delayCard = card()
         delayCard.addView(label("Пауза перед сворачиванием (сек)"))
-        val bgDelayInput = inputField("1.5").apply {
+        delayCard.addView(inputField("1.5").apply {
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
             val savedSec = prefs.getFloat("bg_go_home_delay_sec", 1.5f)
             setText(formatSeconds(savedSec))
@@ -385,8 +397,7 @@ class MainActivity : AppCompatActivity() {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             })
-        }
-        delayCard.addView(bgDelayInput)
+        })
         delayCard.addView(hint("Диапазон: 0.5 – 10 сек"))
         root.addView(delayCard)
 
@@ -621,10 +632,28 @@ class MainActivity : AppCompatActivity() {
             setPadding(10, 0, 10, 10)
         })
 
-        val savedPackages = prefs.getStringSet("target_packages", emptySet()) ?: emptySet()
-        val apps = cachedApps ?: emptyList()
+        val apps = cachedApps
+        if (apps == null) {
+            // Приложения ещё грузятся в фоне — показываем индикатор
+            val loadingView = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER
+                setPadding(20, 60, 20, 60)
+            }
+            loadingView.addView(ProgressBar(this).apply {
+                layoutParams = LinearLayout.LayoutParams(80, 80)
+            })
+            loadingView.addView(TextView(this).apply {
+                text = "  Загрузка приложений…"
+                textSize = 14f
+                setTextColor(colorTextLight)
+            })
+            root.addView(loadingView)
+            return
+        }
 
-        // Сортировка: сначала выбранные, потом по алфавиту
+        val savedPackages = prefs.getStringSet("target_packages", emptySet()) ?: emptySet()
+
         val sorted = apps.sortedWith(
             compareByDescending<AppEntry> { savedPackages.contains(it.pkg) }
                 .thenBy { it.label.lowercase() }
@@ -708,7 +737,6 @@ class MainActivity : AppCompatActivity() {
         }
         row.addView(bgCheck)
 
-        // Обработчик клика
         row.setOnClickListener {
             val currentSet = prefs.getStringSet("target_packages", emptySet())?.toMutableSet() ?: mutableSetOf()
             val nowSelected: Boolean
@@ -723,7 +751,7 @@ class MainActivity : AppCompatActivity() {
             }
             prefs.edit().putStringSet("target_packages", currentSet).apply()
 
-            // === МГНОВЕННОЕ обновление только этой строки ===
+            // Мгновенно обновляем только эту строку
             row.background = roundedBg(if (nowSelected) colorGreen else colorCard, 24)
             labelView.text = if (nowSelected) "✓  ${entry.label}" else "○  ${entry.label}"
             labelView.setTextColor(if (nowSelected) Color.WHITE else colorText)
@@ -735,11 +763,10 @@ class MainActivity : AppCompatActivity() {
             )
             bgCheck.setTextColor(if (nowSelected) Color.WHITE else colorText)
 
-            // === ОТЛОЖЕННАЯ пересортировка через 600 мс ===
+            // Отложенная пересортировка через 600 мс
             pendingRebuild?.let { handler.removeCallbacks(it) }
             pendingRebuild = Runnable {
                 rebuildMainContent()
-                // После пересортировки — прокрутить к заголовку списка
                 mainScrollView?.post {
                     val target = listTitleView ?: return@post
                     mainScrollView?.smoothScrollTo(0, target.top - 20)
@@ -784,6 +811,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun showPackagePickerDialog(onPicked: (String) -> Unit) {
         val apps = cachedApps ?: emptyList()
+        if (apps.isEmpty()) {
+            Toast.makeText(this, "Приложения ещё загружаются, попробуйте через секунду", Toast.LENGTH_SHORT).show()
+            return
+        }
         val sorted = apps.sortedBy { it.label.lowercase() }
         val labels = sorted.map { it.label }.toTypedArray()
 
