@@ -5,10 +5,12 @@ import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.view.KeyEvent
 import androidx.core.app.NotificationCompat
 
 class KeepAliveService : Service() {
@@ -36,7 +38,6 @@ class KeepAliveService : Service() {
             return START_STICKY
         }
 
-        // Обычный режим: автозапуск всех приложений + старт монитора
         val targetSet = prefs.getStringSet("target_packages", emptySet()) ?: emptySet()
 
         if (targetSet.isEmpty()) {
@@ -57,9 +58,7 @@ class KeepAliveService : Service() {
             }, delayMs)
         }
 
-        // Стартуем монитор (если включён)
         startMonitor(prefs)
-
         return START_STICKY
     }
 
@@ -105,12 +104,6 @@ class KeepAliveService : Service() {
         monitorRunnable = null
     }
 
-    /**
-     * Проверяет активность лаунчера:
-     *   - Если лаунчер сейчас на переднем плане → ничего.
-     *   - Если лаунчер был активен последние N минут → ничего.
-     *   - Если лаунчер неактивен N+ минут ИЛИ [force]=true и он убит → запускаем.
-     */
     private fun checkAndLaunchMonitorPackage(prefs: SharedPreferences, force: Boolean) {
         val monitorPkg = prefs.getString("monitor_package", "") ?: ""
         if (monitorPkg.isEmpty()) {
@@ -121,14 +114,11 @@ class KeepAliveService : Service() {
         val idleMinutes = prefs.getLong("monitor_idle_minutes", 30L).coerceIn(1L, 240L)
         val idleMs = idleMinutes * 60 * 1000
 
-        // Проверяем, когда лаунчер был активен последний раз
         val lastUsed = getLastTimeUsed(monitorPkg)
         val now = System.currentTimeMillis()
         val idleSinceMs = if (lastUsed > 0) (now - lastUsed) else Long.MAX_VALUE
-
         val idleMinutesActual = idleSinceMs / 60000
 
-        // Сейчас лаунчер на переднем плане?
         val isInForeground = isPackageInForeground(monitorPkg)
 
         if (isInForeground) {
@@ -136,14 +126,12 @@ class KeepAliveService : Service() {
             return
         }
 
-        // Форс-проверка: если лаунчер убит (нет в списке активных) — запускаем сразу
         if (force) {
             LogWriter.log("Монитор(FORCE): лаунчер неактивен ${idleMinutesActual}мин — запускаем")
             launchMonitorPackage(monitorPkg)
             return
         }
 
-        // Обычная проверка: если неактивен больше порога — запускаем
         if (idleSinceMs >= idleMs) {
             LogWriter.log("Монитор: лаунчер неактивен ${idleMinutesActual}мин (порог ${idleMinutes}мин) — запускаем")
             launchMonitorPackage(monitorPkg)
@@ -152,12 +140,10 @@ class KeepAliveService : Service() {
         }
     }
 
-    /** Возвращает timestamp (в мс) последнего использования пакета, или 0 если неизвестно. */
     private fun getLastTimeUsed(pkg: String): Long {
         try {
             val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
             val now = System.currentTimeMillis()
-            // Смотрим статистику за последние 24 часа
             val stats = usm.queryUsageStats(
                 UsageStatsManager.INTERVAL_DAILY,
                 now - 24 * 60 * 60 * 1000,
@@ -175,7 +161,6 @@ class KeepAliveService : Service() {
         return 0
     }
 
-    /** Проверяет, находится ли пакет на переднем плане (по последним событиям использования). */
     private fun isPackageInForeground(pkg: String): Boolean {
         try {
             val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
@@ -220,6 +205,17 @@ class KeepAliveService : Service() {
                 startActivity(launchIntent)
                 LogWriter.log("+ Запущен $pkg (задержка ${delaySec}с)")
 
+                // === АВТОПЛЕЙ ===
+                // Проверяем ключ autoplay_<pkg> — если стоит галочка, шлём Play
+                val autoplay = prefs.getBoolean("autoplay_$pkg", false)
+                if (autoplay) {
+                    LogWriter.log("Автоплей: ждём 3с и отправляем Play для $pkg")
+                    handler.postDelayed({
+                        sendPlayCommand()
+                    }, 3000L)
+                }
+
+                // Проверяем режим «Фон»
                 val bgMode = prefs.getBoolean("bg_$pkg", false)
                 if (bgMode) {
                     val goHomeSec = prefs.getFloat("bg_go_home_delay_sec", 1.5f)
@@ -235,6 +231,33 @@ class KeepAliveService : Service() {
             }
         } catch (e: Exception) {
             LogWriter.log("- ОШИБКА запуска $pkg: ${e.message}")
+        }
+    }
+
+    /**
+     * Отправляет команду Play через AudioManager (эмуляция кнопки).
+     * На Android 9 может не сработать из-за ограничений системы.
+     */
+    private fun sendPlayCommand() {
+        try {
+            val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY))
+            am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY))
+            LogWriter.log("+ Автоплей: отправлена команда MEDIA_PLAY")
+
+            // Повтор через 500 мс — чтобы точно дошло
+            handler.postDelayed({
+                try {
+                    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY))
+                    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY))
+                    LogWriter.log("+ Автоплей: повтор MEDIA_PLAY")
+                } catch (e: Exception) {
+                    LogWriter.log("Автоплей повтор: ошибка ${e.message}")
+                }
+            }, 500L)
+
+        } catch (e: Exception) {
+            LogWriter.log("- Автоплей: ошибка ${e.message}")
         }
     }
 
