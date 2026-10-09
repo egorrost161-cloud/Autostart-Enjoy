@@ -27,13 +27,14 @@ import java.io.File
 class MainActivity : AppCompatActivity() {
 
     private lateinit var prefs: SharedPreferences
+    private lateinit var appsCache: AppsCache
     private var showingSetup = false
     private var lastPermissionState = ""
 
-    // Кэш приложений
+    // Кэш приложений (в памяти + на диск)
     private data class AppEntry(
         val label: String,
-        val icon: Drawable,
+        val icon: Drawable?,
         val pkg: String
     )
     private var cachedApps: List<AppEntry>? = null
@@ -61,15 +62,27 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+        appsCache = AppsCache(this)
         LogWriter.init(this)
+
+        // 1) Пробуем мгновенно загрузить из кэша на диске
+        val cachedFromDisk = appsCache.load()
+        if (cachedFromDisk != null) {
+            cachedApps = cachedFromDisk.mapNotNull { entry ->
+                val icon = appsCache.decodeIcon(entry.iconBase64)
+                AppEntry(entry.label, icon, entry.pkg)
+            }
+            LogWriter.log("AppsCache: загружено ${cachedApps?.size} приложений из кэша")
+        }
 
         if (!areAllPermissionsGranted()) {
             showingSetup = true
             showSetupScreen()
         } else {
             showingSetup = false
-            showMainScreen() // показываем экран СРАЗУ с "Загрузка..."
-            loadAppsInBackground() // в фоне грузим список
+            showMainScreen()
+            // 2) В фоне проверяем актуальность кэша
+            refreshAppsInBackground()
         }
         lastPermissionState = permissionStateKey()
     }
@@ -90,9 +103,12 @@ class MainActivity : AppCompatActivity() {
         handler.removeCallbacksAndMessages(null)
     }
 
-    /** Загружает список приложений в фоне, чтобы не тормозить запуск. */
-    private fun loadAppsInBackground() {
-        if (cachedApps != null || isLoadingApps) return
+    /**
+     * В фоне собирает актуальный список приложений. Если он отличается
+     * от кэша — обновляет кэш и UI.
+     */
+    private fun refreshAppsInBackground() {
+        if (isLoadingApps) return
         isLoadingApps = true
 
         Thread {
@@ -102,19 +118,38 @@ class MainActivity : AppCompatActivity() {
                 app.packageName != packageName &&
                 pm.getLaunchIntentForPackage(app.packageName) != null
             }
-            val list = launchable.map { app ->
-                AppEntry(
-                    label = pm.getApplicationLabel(app).toString(),
-                    icon = pm.getApplicationIcon(app),
-                    pkg = app.packageName
-                )
+
+            // Собираем новую версию списка и сразу — сериализуем в кэш
+            val cacheEntries = ArrayList<AppsCache.Entry>(launchable.size)
+            val runtimeList = ArrayList<AppEntry>(launchable.size)
+
+            for (app in launchable) {
+                try {
+                    val label = pm.getApplicationLabel(app).toString()
+                    val icon = pm.getApplicationIcon(app)
+                    val iconBase64 = appsCache.encodeIcon(icon)
+                    cacheEntries.add(AppsCache.Entry(label, app.packageName, iconBase64))
+                    runtimeList.add(AppEntry(label, icon, app.packageName))
+                } catch (e: Exception) {
+                    LogWriter.log("refreshApps: ошибка ${app.packageName}: ${e.message}")
+                }
             }
 
-            // Возвращаемся в UI-поток и обновляем экран
+            // Проверяем, отличается ли новый список от того, что уже в памяти
+            val current = cachedApps
+            val changed = current == null ||
+                current.size != runtimeList.size ||
+                current.map { it.pkg }.toSet() != runtimeList.map { it.pkg }.toSet()
+
+            if (changed) {
+                appsCache.save(cacheEntries)
+                LogWriter.log("AppsCache: кэш обновлён (${runtimeList.size} приложений)")
+            }
+
             runOnUiThread {
-                cachedApps = list
+                cachedApps = runtimeList
                 isLoadingApps = false
-                if (!showingSetup) {
+                if (!showingSetup && changed) {
                     rebuildMainContent()
                 }
             }
@@ -368,7 +403,6 @@ class MainActivity : AppCompatActivity() {
         rebuildMainContent()
     }
 
-    /** Полностью пересобирает содержимое главного экрана. */
     private fun rebuildMainContent() {
         val root = mainRoot ?: return
         root.removeAllViews()
@@ -478,7 +512,7 @@ class MainActivity : AppCompatActivity() {
 
                 if (exists) {
                     val appInfo = packageManager.getApplicationInfo(savedMonitorPkg, 0)
-                    val label = packageManager.getApplicationLabel(appInfo).toString()
+                    val labelStr = packageManager.getApplicationLabel(appInfo).toString()
                     val icon = packageManager.getApplicationIcon(appInfo)
 
                     packageCard.addView(ImageView(this).apply {
@@ -491,7 +525,7 @@ class MainActivity : AppCompatActivity() {
                         layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                     }
                     textCol.addView(TextView(this).apply {
-                        text = label
+                        text = labelStr
                         textSize = 16f
                         setTextColor(colorText)
                     })
@@ -634,7 +668,7 @@ class MainActivity : AppCompatActivity() {
 
         val apps = cachedApps
         if (apps == null) {
-            // Приложения ещё грузятся в фоне — показываем индикатор
+            // Очень редкая ситуация — если кэш на диске пустой И фоновая загрузка ещё не завершилась
             val loadingView = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER
@@ -684,7 +718,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         row.addView(ImageView(this).apply {
-            setImageDrawable(entry.icon)
+            if (entry.icon != null) {
+                setImageDrawable(entry.icon)
+            } else {
+                setBackgroundColor(colorGray)
+            }
             layoutParams = LinearLayout.LayoutParams(90, 90).apply { setMargins(0, 0, 20, 0) }
         })
 
@@ -751,7 +789,6 @@ class MainActivity : AppCompatActivity() {
             }
             prefs.edit().putStringSet("target_packages", currentSet).apply()
 
-            // Мгновенно обновляем только эту строку
             row.background = roundedBg(if (nowSelected) colorGreen else colorCard, 24)
             labelView.text = if (nowSelected) "✓  ${entry.label}" else "○  ${entry.label}"
             labelView.setTextColor(if (nowSelected) Color.WHITE else colorText)
@@ -763,7 +800,6 @@ class MainActivity : AppCompatActivity() {
             )
             bgCheck.setTextColor(if (nowSelected) Color.WHITE else colorText)
 
-            // Отложенная пересортировка через 600 мс
             pendingRebuild?.let { handler.removeCallbacks(it) }
             pendingRebuild = Runnable {
                 rebuildMainContent()
