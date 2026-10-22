@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Все ваши разрешения -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
@@ -11,7 +10,6 @@
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- ВАЖНО: Делаем Яндекс.Музыку видимой для нашего приложения -->
     <queries>
         <package android:name="ru.yandex.music" />
         <intent>
@@ -27,34 +25,24 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.AppCompat.Light.NoActionBar">
 
-        <activity
-            android:name=".MainActivity"
-            android:exported="true">
+        <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
-        <service
-            android:name=".KeepAliveService"
-            android:enabled="true"
-            android:exported="false" />
+        <service android:name=".KeepAliveService" android:enabled="true" android:exported="false" />
 
-        <receiver
-            android:name=".BootReceiver"
-            android:enabled="true"
-            android:exported="true">
+        <receiver android:name=".BootReceiver" android:enabled="true" android:exported="true">
             <intent-filter android:priority="1000">
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
         </receiver>
 
-        <receiver
-            android:name=".SystemEventReceiver"
-            android:enabled="true"
-            android:exported="true">
+        <receiver android:name=".SystemEventReceiver" android:enabled="true" android:exported="true">
+            <!-- Оставляем твои интенты для событий -->
             <intent-filter android:priority="500">
                 <action android:name="android.intent.action.ACTION_POWER_CONNECTED" />
                 <action android:name="android.intent.action.ACTION_POWER_DISCONNECTED" />
@@ -75,24 +63,17 @@
             </intent-filter>
         </receiver>
 
-        <!-- НОВОЕ: Служба доступа к медиа (Критически важно для управления музыкой) -->
-        <service
-            android:name=".MediaAccessService"
-            android:exported="true"
-            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+        <!-- НОВЫЕ СЕРВИСЫ ДЛЯ МОМЕНТАЛЬНОГО УПРАВЛЕНИЯ -->
+        <service android:name=".MediaAccessService" android:exported="true" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
             <intent-filter>
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
         </service>
 
-        <!-- НОВОЕ: Мост для холодного запуска музыки -->
-        <service
-            android:name=".MusicBridgeService"
-            android:exported="true">
+        <service android:name=".MusicBridgeService" android:exported="true">
             <intent-filter>
                 <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>
         </service>
-
     </application>
 </manifest>
