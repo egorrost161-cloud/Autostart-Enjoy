@@ -2,6 +2,7 @@ package com.example.autostart
 
 import android.app.AlertDialog
 import android.app.AppOpsManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
@@ -31,7 +32,6 @@ class MainActivity : AppCompatActivity() {
     private var showingSetup = false
     private var lastPermissionState = ""
 
-    // Кэш приложений (в памяти + на диск)
     private data class AppEntry(
         val label: String,
         val icon: Drawable?,
@@ -40,16 +40,13 @@ class MainActivity : AppCompatActivity() {
     private var cachedApps: List<AppEntry>? = null
     private var isLoadingApps = false
 
-    // Ссылки на главный экран
     private var mainScrollView: ScrollView? = null
     private var mainRoot: LinearLayout? = null
     private var listTitleView: View? = null
 
-    // Отложенная пересортировка
     private val handler = Handler(Looper.getMainLooper())
     private var pendingRebuild: Runnable? = null
 
-    // Цвета
     private val colorBg = Color.parseColor("#F5F5F7")
     private val colorCard = Color.WHITE
     private val colorGreen = Color.parseColor("#4CAF50")
@@ -65,7 +62,6 @@ class MainActivity : AppCompatActivity() {
         appsCache = AppsCache(this)
         LogWriter.init(this)
 
-        // 1) Пробуем мгновенно загрузить из кэша на диске
         val cachedFromDisk = appsCache.load()
         if (cachedFromDisk != null) {
             cachedApps = cachedFromDisk.mapNotNull { entry ->
@@ -81,7 +77,6 @@ class MainActivity : AppCompatActivity() {
         } else {
             showingSetup = false
             showMainScreen()
-            // 2) В фоне проверяем актуальность кэша
             refreshAppsInBackground()
         }
         lastPermissionState = permissionStateKey()
@@ -103,10 +98,6 @@ class MainActivity : AppCompatActivity() {
         handler.removeCallbacksAndMessages(null)
     }
 
-    /**
-     * В фоне собирает актуальный список приложений. Если он отличается
-     * от кэша — обновляет кэш и UI.
-     */
     private fun refreshAppsInBackground() {
         if (isLoadingApps) return
         isLoadingApps = true
@@ -119,7 +110,6 @@ class MainActivity : AppCompatActivity() {
                 pm.getLaunchIntentForPackage(app.packageName) != null
             }
 
-            // Собираем новую версию списка и сразу — сериализуем в кэш
             val cacheEntries = ArrayList<AppsCache.Entry>(launchable.size)
             val runtimeList = ArrayList<AppEntry>(launchable.size)
 
@@ -135,7 +125,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            // Проверяем, отличается ли новый список от того, что уже в памяти
             val current = cachedApps
             val changed = current == null ||
                 current.size != runtimeList.size ||
@@ -155,8 +144,6 @@ class MainActivity : AppCompatActivity() {
             }
         }.start()
     }
-
-    // ============ УТИЛИТЫ UI ============
 
     private fun roundedBg(color: Int, radiusPx: Int = 24): GradientDrawable {
         return GradientDrawable().apply {
@@ -222,10 +209,8 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { onClick() }
         }
 
-    // ============ РАЗРЕШЕНИЯ ============
-
     private fun permissionStateKey(): String {
-        return "${Settings.canDrawOverlays(this)}|${hasUsageStatsPermission()}|${batteryGranted()}|${areNotificationsEnabled()}"
+        return "${Settings.canDrawOverlays(this)}|${hasUsageStatsPermission()}|${batteryGranted()}|${areNotificationsEnabled()}|${isNotificationServiceEnabled()}"
     }
 
     private fun areAllPermissionsGranted(): Boolean {
@@ -237,7 +222,8 @@ class MainActivity : AppCompatActivity() {
         } else true
         val usageStats = hasUsageStatsPermission()
         val notifications = areNotificationsEnabled()
-        return overlay && battery && usageStats && notifications
+        val notifListener = isNotificationServiceEnabled()
+        return overlay && battery && usageStats && notifications && notifListener
     }
 
     private fun hasUsageStatsPermission(): Boolean {
@@ -252,6 +238,21 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             return false
         }
+    }
+
+    private fun isNotificationServiceEnabled(): Boolean {
+        val pkgName = packageName
+        val flat = Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
+        if (flat != null && flat.isNotEmpty()) {
+            val names = flat.split(":")
+            for (name in names) {
+                val cn = ComponentName.unflattenFromString(name)
+                if (cn != null && pkgName == cn.packageName) {
+                    return true
+                }
+            }
+        }
+        return false
     }
 
     private fun areNotificationsEnabled(): Boolean =
@@ -299,8 +300,6 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { onClick() }
         }
 
-    // ============ ЭКРАН НАСТРОЙКИ ============
-
     private fun showSetupScreen() {
         showingSetup = true
         val root = LinearLayout(this).apply {
@@ -318,7 +317,7 @@ class MainActivity : AppCompatActivity() {
         })
 
         root.addView(TextView(this).apply {
-            text = "Для работы нужно 4 разрешения.\nНажми на каждое — откроется системная настройка.\nКогда галочка станет зелёной — жми «ПРОДОЛЖИТЬ»."
+            text = "Для работы нужно 5 разрешений.\nНажми на каждое — откроется системная настройка.\nКогда галочка станет зелёной — жми «ПРОДОЛЖИТЬ»."
             textSize = 14f
             setTextColor(colorTextLight)
             gravity = Gravity.CENTER
@@ -366,6 +365,17 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this@MainActivity, "Уже выдано", Toast.LENGTH_SHORT).show()
             }
         })
+        
+        // НОВАЯ КНОПКА ДЛЯ ДОСТУПА К МЕДИА
+        permsCard.addView(permissionButton("Доступ к медиа", isNotificationServiceEnabled()) {
+            if (!isNotificationServiceEnabled()) {
+                startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
+                Toast.makeText(this@MainActivity, "Найди AutoStart Pro и включи доступ", Toast.LENGTH_LONG).show()
+            } else {
+                Toast.makeText(this@MainActivity, "Уже выдано", Toast.LENGTH_SHORT).show()
+            }
+        })
+        
         root.addView(permsCard)
 
         root.addView(roundedButton("ОБНОВИТЬ СТАТУС", colorGray, colorText) { recreate() })
@@ -383,8 +393,6 @@ class MainActivity : AppCompatActivity() {
             addView(root)
         })
     }
-
-    // ============ ГЛАВНЫЙ ЭКРАН ============
 
     private fun showMainScreen() {
         showingSetup = false
@@ -415,7 +423,6 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, 10, 0, 20)
         })
 
-        // ============ КАРТОЧКА: СВОРАЧИВАНИЕ ============
         val delayCard = card()
         delayCard.addView(label("Пауза перед сворачиванием (сек)"))
         delayCard.addView(inputField("1.5").apply {
@@ -435,7 +442,6 @@ class MainActivity : AppCompatActivity() {
         delayCard.addView(hint("Диапазон: 0.5 – 10 сек"))
         root.addView(delayCard)
 
-        // ============ КАРТОЧКА: АВТОПЛЕЙ ============
         val autoplayCard = card()
         autoplayCard.addView(CheckBox(this).apply {
             text = "Автоплей Яндекс.Музыки"
@@ -446,10 +452,9 @@ class MainActivity : AppCompatActivity() {
                 prefs.edit().putBoolean("autoplay_yandex", checked).apply()
             }
         })
-        autoplayCard.addView(hint("Пробует отправить команду Play через 3 и 6 секунд после запуска"))
+        autoplayCard.addView(hint("Пробует отправить команду Play после запуска системы"))
         root.addView(autoplayCard)
 
-        // ============ КАРТОЧКА: МОНИТОР (СО СПОЙЛЕРОМ) ============
         val monitorCard = card()
         val monitorOpen = prefs.getBoolean("monitor_spoiler_open", false)
 
@@ -620,7 +625,6 @@ class MainActivity : AppCompatActivity() {
         }
         root.addView(monitorCard)
 
-        // ============ КНОПКИ ============
         root.addView(roundedButton("ЗАПУСТИТЬ СЕРВИС СЕЙЧАС", colorGreen, Color.WHITE) {
             val intent = Intent(this@MainActivity, KeepAliveService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -648,7 +652,6 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
-        // ============ СПИСОК ПРИЛОЖЕНИЙ ============
         val listTitle = TextView(this).apply {
             text = "ВЫБЕРИТЕ ПРИЛОЖЕНИЯ"
             textSize = 13f
@@ -668,7 +671,6 @@ class MainActivity : AppCompatActivity() {
 
         val apps = cachedApps
         if (apps == null) {
-            // Очень редкая ситуация — если кэш на диске пустой И фоновая загрузка ещё не завершилась
             val loadingView = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER
@@ -698,8 +700,6 @@ class MainActivity : AppCompatActivity() {
             root.addView(createAppRow(entry, isSelected))
         }
     }
-
-    // ============ СТРОКА ПРИЛОЖЕНИЯ ============
 
     private fun formatSeconds(sec: Float): String {
         return if (sec % 1.0f == 0.0f) sec.toInt().toString() else sec.toString()
@@ -813,8 +813,6 @@ class MainActivity : AppCompatActivity() {
 
         return row
     }
-
-    // ============ ДИАЛОГИ ============
 
     private fun showLogDialog() {
         try {
