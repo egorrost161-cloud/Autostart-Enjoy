@@ -15,8 +15,8 @@ import kotlin.concurrent.thread
 
 object BackgroundMusicStarter {
     private const val TARGET = "ru.yandex.music"
-    private const val TIMEOUT = 45000L // 45 секунд на попытки
-    private const val RETRY = 2000L // каждые 2 секунды
+    private const val TIMEOUT = 45000L
+    private const val RETRY = 2000L
 
     fun start(context: Context, delayMs: Long) {
         Handler(Looper.getMainLooper()).postDelayed({
@@ -25,8 +25,10 @@ object BackgroundMusicStarter {
     }
 
     private fun loop(context: Context) {
-        // Проверяем, выдал ли пользователь доступ к уведомлениям
-        val flat = android.provider.Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners")
+        val flat = android.provider.Settings.Secure.getString(
+            context.contentResolver,
+            "enabled_notification_listeners"
+        )
         if (flat == null || !flat.contains(context.packageName)) {
             LogWriter.log("Starter: ОШИБКА! Нет доступа к уведомлениям.")
             return
@@ -42,7 +44,6 @@ object BackgroundMusicStarter {
                 val sessions = manager.getActiveSessions(listener)
                 var targetController: MediaController? = null
 
-                // Метод 1: Ищем активную сессию музыки
                 for (c in sessions) {
                     if (TARGET == c.packageName) {
                         targetController = c
@@ -53,11 +54,11 @@ object BackgroundMusicStarter {
                 if (targetController != null) {
                     val state = targetController.playbackState
                     if (state != null) {
-                        if (state.state == PlaybackState.STATE_PLAYING) return // Уже играет
-                        
+                        if (state.state == PlaybackState.STATE_PLAYING) return
+
                         targetController.transportControls.play()
                         Thread.sleep(1500)
-                        
+
                         if (targetController.playbackState?.state == PlaybackState.STATE_PLAYING) {
                             LogWriter.log("Starter: УСПЕХ (Метод 1 - Прямой контроллер)")
                             return
@@ -65,7 +66,6 @@ object BackgroundMusicStarter {
                     }
                 }
 
-                // Метод 2: Эмуляция кнопки гарнитуры (если сессия мертва)
                 if (targetController == null) {
                     val mediaIntent = Intent(Intent.ACTION_MEDIA_BUTTON)
                     mediaIntent.setPackage(TARGET)
@@ -79,27 +79,16 @@ object BackgroundMusicStarter {
                     LogWriter.log("Starter: Отправлена кнопка MEDIA_PLAY")
                 }
 
-                // Метод 3: Холодный старт через MediaBrowserService
+                // Метод 3: холодный старт через MediaBrowserService.
+                // Вынесено в отдельный метод, чтобы не было "Unresolved reference: browser".
                 if (targetController == null && !sentBrowser) {
-                    val intent = Intent("android.media.browse.MediaBrowserService").setPackage(TARGET)
-                    val resolveInfos = context.packageManager.queryIntentServices(intent, 0)
-                    if (!resolveInfos.isNullOrEmpty()) {
-                        val info = resolveInfos[0].serviceInfo
-                        val comp = ComponentName(info.packageName, info.name)
-                        val browser = MediaBrowser(context, comp, object : MediaBrowser.ConnectionCallback() {
-                            override fun onConnected() {
-                                try {
-                                    browser.mediaController?.transportControls?.play()
-                                    LogWriter.log("Starter: УСПЕХ (Метод 3 - MediaBrowser)")
-                                } catch (e: Exception) {
-                                    LogWriter.log("Starter Ошибка Browser: ${e.message}")
-                                }
-                            }
-                        }, null)
-                        browser.connect()
-                        sentBrowser = true
+                    val connected = tryColdStart(context)
+                    if (connected) {
+                        LogWriter.log("Starter: Инициирован холодный старт (Метод 3)")
                     }
+                    sentBrowser = true
                 }
+
                 Thread.sleep(RETRY)
             } catch (e: Exception) {
                 LogWriter.log("Starter Ошибка: ${e.message}")
@@ -107,5 +96,59 @@ object BackgroundMusicStarter {
             }
         }
         LogWriter.log("Starter: Время вышло, музыка не заиграла.")
+    }
+
+    /**
+     * Холодный старт Яндекс.Музыки через MediaBrowser.
+     * Возвращает true, если удалось инициировать подключение.
+     */
+    private fun tryColdStart(context: Context): Boolean {
+        val intent = Intent("android.media.browse.MediaBrowserService").setPackage(TARGET)
+        val resolveInfos = context.packageManager.queryIntentServices(intent, 0)
+        if (resolveInfos.isNullOrEmpty()) {
+            LogWriter.log("Starter: MediaBrowserService Яндекса не найден")
+            return false
+        }
+
+        val info = resolveInfos[0].serviceInfo
+        val comp = ComponentName(info.packageName, info.name)
+
+        // Используем массив-контейнер, чтобы callback мог обратиться к browser
+        // даже если он ещё создаётся (гонка инициализации обходится).
+        val holder = arrayOfNulls<MediaBrowser>(1)
+
+        val callback = object : MediaBrowser.ConnectionCallback() {
+            override fun onConnected() {
+                try {
+                    val controller = holder[0]?.mediaController
+                    if (controller != null) {
+                        controller.transportControls.play()
+                        LogWriter.log("Starter: УСПЕХ (Метод 3 - MediaBrowser)")
+                    } else {
+                        LogWriter.log("Starter: MediaBrowser подключён, но контроллер = null")
+                    }
+                } catch (e: Exception) {
+                    LogWriter.log("Starter Ошибка play(): ${e.message}")
+                }
+            }
+
+            override fun onConnectionFailed() {
+                LogWriter.log("Starter: MediaBrowser onConnectionFailed")
+            }
+
+            override fun onConnectionSuspended() {
+                LogWriter.log("Starter: MediaBrowser onConnectionSuspended")
+            }
+        }
+
+        return try {
+            val browser = MediaBrowser(context, comp, callback, null)
+            holder[0] = browser
+            browser.connect()
+            true
+        } catch (e: Exception) {
+            LogWriter.log("Starter Ошибка connect(): ${e.message}")
+            false
+        }
     }
 }
