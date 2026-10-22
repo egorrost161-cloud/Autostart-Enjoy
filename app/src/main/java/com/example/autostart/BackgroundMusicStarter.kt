@@ -3,15 +3,12 @@ package com.example.autostart
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.media.browse.MediaBrowser
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.os.Handler
 import android.os.Looper
-import android.os.SystemClock
-import android.view.KeyEvent
 import kotlin.concurrent.thread
 
 object BackgroundMusicStarter {
@@ -45,7 +42,6 @@ object BackgroundMusicStarter {
                 }
             }
 
-            // Если сессия уже есть — просто жмем Play
             if (targetController != null) {
                 if (targetController.playbackState?.state == PlaybackState.STATE_PLAYING) {
                     LogWriter.log("Starter: Уже играет")
@@ -54,7 +50,6 @@ object BackgroundMusicStarter {
                 targetController.transportControls.play()
                 LogWriter.log("Starter: Отправлен PLAY через MediaController")
             } else {
-                // Если сессии нет — будим через MediaBrowser
                 val intent = Intent("android.media.browse.MediaBrowserService").setPackage(TARGET)
                 val resolveInfos = context.packageManager.queryIntentServices(intent, 0)
                 if (!resolveInfos.isNullOrEmpty()) {
