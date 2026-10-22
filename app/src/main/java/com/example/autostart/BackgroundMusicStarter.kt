@@ -80,7 +80,9 @@ object BackgroundMusicStarter {
                 }
 
                 // Метод 3: холодный старт через MediaBrowserService.
-                // Вынесено в отдельный метод, чтобы не было "Unresolved reference: browser".
+                // После подключения НЕ полагаемся на browser.mediaController —
+                // а просто ждём, пока сервис зарегистрирует сессию, и следующий
+                // цикл loop() найдёт его через MediaSessionManager (Метод 1).
                 if (targetController == null && !sentBrowser) {
                     val connected = tryColdStart(context)
                     if (connected) {
@@ -100,7 +102,9 @@ object BackgroundMusicStarter {
 
     /**
      * Холодный старт Яндекс.Музыки через MediaBrowser.
-     * Возвращает true, если удалось инициировать подключение.
+     * Просто подключаемся к его сервису — он просыпается и регистрирует сессию.
+     * Нажимать play() здесь не нужно: следующий цикл loop() подхватит сессию
+     * через MediaSessionManager (Метод 1) и нажмёт play() там.
      */
     private fun tryColdStart(context: Context): Boolean {
         val intent = Intent("android.media.browse.MediaBrowserService").setPackage(TARGET)
@@ -113,23 +117,9 @@ object BackgroundMusicStarter {
         val info = resolveInfos[0].serviceInfo
         val comp = ComponentName(info.packageName, info.name)
 
-        // Используем массив-контейнер, чтобы callback мог обратиться к browser
-        // даже если он ещё создаётся (гонка инициализации обходится).
-        val holder = arrayOfNulls<MediaBrowser>(1)
-
         val callback = object : MediaBrowser.ConnectionCallback() {
             override fun onConnected() {
-                try {
-                    val controller = holder[0]?.mediaController
-                    if (controller != null) {
-                        controller.transportControls.play()
-                        LogWriter.log("Starter: УСПЕХ (Метод 3 - MediaBrowser)")
-                    } else {
-                        LogWriter.log("Starter: MediaBrowser подключён, но контроллер = null")
-                    }
-                } catch (e: Exception) {
-                    LogWriter.log("Starter Ошибка play(): ${e.message}")
-                }
+                LogWriter.log("Starter: MediaBrowser подключён — ждём регистрации сессии")
             }
 
             override fun onConnectionFailed() {
@@ -143,7 +133,6 @@ object BackgroundMusicStarter {
 
         return try {
             val browser = MediaBrowser(context, comp, callback, null)
-            holder[0] = browser
             browser.connect()
             true
         } catch (e: Exception) {
