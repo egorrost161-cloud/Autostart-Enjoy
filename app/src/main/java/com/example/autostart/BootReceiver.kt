@@ -7,16 +7,25 @@ import android.os.Build
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        val action = intent.action ?: return
-        if (action == Intent.ACTION_BOOT_COMPLETED || action == "android.intent.action.QUICKBOOT_POWERON") {
-            LogWriter.init(context)
-            LogWriter.log("BOOT_COMPLETED получен, стартуем сервис")
+        if (intent.action == Intent.ACTION_BOOT_COMPLETED || 
+            intent.action == "android.intent.action.QUICKBOOT_POWERON") {
+            
+            LogWriter.log("BootReceiver: Получен сигнал загрузки системы")
 
-            val svc = Intent(context, KeepAliveService::class.java)
+            // 1. Запускаем ваш сервис для поддержания жизни и запуска приложений
+            val serviceIntent = Intent(context, KeepAliveService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(svc)
+                context.startForegroundService(serviceIntent)
             } else {
-                context.startService(svc)
+                context.startService(serviceIntent)
+            }
+
+            // 2. Запускаем автоплей Яндекс.Музыки (если включено в настройках)
+            val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+            if (prefs.getBoolean("autoplay_yandex", false)) {
+                LogWriter.log("BootReceiver: Автоплей включен, запускаем через 15 сек...")
+                // Задержка 15 секунд, чтобы система и магнитола полностью прогрузились
+                BackgroundMusicStarter.start(context, 15000L)
             }
         }
     }
